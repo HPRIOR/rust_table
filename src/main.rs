@@ -195,9 +195,16 @@ impl Type {
     }
 }
 
+#[derive(Debug)]
+struct Position{
+    x: i32,
+    y: String
+}
+
 fn main() {
 
-    let mut entity = vec![12.as_component(), "as component".as_component()];
+    // let mut entity = vec![12.as_component(), "as component".as_component()];
+    let mut entity = vec![Position {x:12, y:"asd".to_string()}.as_component()];
     entity.sort_by(|a, b| a.type_info().partial_cmp(&b.type_info()).unwrap());
 
     let type_infos: Vec<TypeInfo> = entity.iter().map(|c| (**c).type_info()).collect();
@@ -206,10 +213,8 @@ fn main() {
 
     table.add(entity);
 
-    let comps: &[i32] = table.columns[0].get_components();
-    let comps2: &[&str] = table.columns[1].get_components();
+    let comps: &[Position] = table.columns[0].get_components();
     println!("{:#?}", comps);
-    println!("{:#?}", comps2);
 
     println!("{:#?}", table);
 }
