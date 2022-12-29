@@ -24,6 +24,12 @@ impl EntityTable {
                 .for_each(|i| self.columns[i].push_component(components.remove(i)))
         }
     }
+
+    pub fn has<T: Component>(&self) -> bool {
+        self.column_info
+            .iter()
+            .any(|ci| ci.id == TypeInfo::of::<T>().id)
+    }
 }
 
 #[cfg(test)]

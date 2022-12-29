@@ -24,6 +24,7 @@ impl ECS {
     // - entity signature/hash - unique id for table that can quickly get table for a given entity 
     //      based on what types it contains
     // - flesh out column data structure (removing entities, Drop, Deref, DerefMut, ZSTs )
+    // - create macro entity![13, "something", Position(10, 20)]
 
 
 
