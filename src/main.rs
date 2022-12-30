@@ -4,18 +4,19 @@ extern crate core;
 mod ecs;
 mod storage;
 
+use std::marker::PhantomData;
+use crate::storage::component::Component;
+use crate::storage::component::TypeInfo;
+use crate::storage::query::Query;
+use crate::storage::table::EntityTable;
 use std::any::TypeId;
 use std::collections::HashSet;
-use crate::storage::component::TypeInfo;
-use crate::storage::table::EntityTable;
-use crate::storage::component::Component;
 
 #[derive(Debug)]
 struct Position {
     x: i32,
     y: String,
 }
-
 
 fn main() {
     // let mut entity = vec![12.as_component(), "as component".as_component()];
@@ -33,12 +34,28 @@ fn main() {
     table.add(entity3);
     table.add(entity4);
 
-    let tables  = vec![table];
+    let tables = vec![table];
 
     // let a: (u32, u8) = test!((u32, u8), 1);
     // println!("{:?}", a);
     //
-    let columns: (Vec<&[u8]>, Vec<&[i32]>) = query!(tables => with (u8,i32));
+    let (ones, twos) = query!(tables => with (u8, i32));
+
+
+
+    for one in ones{
+        println!("{}", one)
+    }
+
+    for two in twos{
+
+        println!("{}", two)
+    }
+
+    create_query!(A, B);
+
+    let test_query: TestQuery<u32, u32>;
+
 
     // let comps: &[i32] = table.columns[0].get_components();
     // let column1 = &table.columns[0];

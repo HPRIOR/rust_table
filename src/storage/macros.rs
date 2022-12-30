@@ -1,8 +1,10 @@
-use std::any::TypeId;
-use std::collections::HashSet;
-use std::ops::Add;
 use crate::storage::component::TypeInfo;
 use crate::storage::table::EntityTable;
+use crate::storage::query::Query;
+use std::any::TypeId;
+use std::collections::HashSet;
+use std::marker::PhantomData;
+use std::ops::Add;
 #[macro_export]
 macro_rules! entity {
     ($($x:expr),*) => {
@@ -18,14 +20,35 @@ macro_rules! entity {
     };
 }
 
-fn test(tables: &Vec<EntityTable>, type_infos: HashSet<TypeId>) {
-    let mut type_infos: HashSet<TypeId> = HashSet::new();
-    let matching_tables: Vec<&EntityTable> =
-        tables.iter().filter(|t| t.has_signature(&type_infos)).collect();
-
-    let columnsBox = (&matching_tables).iter().map(|t| t.get::<i32>());
+#[macro_export]
+macro_rules! test {
+    () => {
+        pub struct TestStruct;
+        impl TestStruct {
+            pub fn new() -> Self{
+                Self
+            }
+        }
+    };
 }
 
+
+#[macro_export]
+macro_rules! create_query {
+    ($($t:ident),*)=> {
+
+        pub struct TestQuery<$($t,)*> {
+            vec: Vec<($($t,)*)>,
+            outer_index: usize,
+            inner_index: usize,
+        }
+    };
+}
+
+/// POC macro, currently just collects data from exactly matching tables and returns list of lists
+/// TODO:
+/// Instead of returning nested data structure, return an Iterable which abstracts the nesting
+/// Iterable<&[type]> -> .collect -> Query<type> -> for i in Query do something
 #[macro_export]
 macro_rules! query {
     ($tables: expr => with ($($query_type:ty),*)) => {
@@ -39,28 +62,11 @@ macro_rules! query {
             let matching_tables: Vec<&EntityTable> =
                 $tables.iter().filter(|t| t.has_signature(&type_ids)).collect();
 
-            let result  = ($( (&matching_tables).iter().map(|t| t.get::<$query_type>()).collect(), )*);
+
+            let result: ($(Query<$query_type>,)*)  =
+                ($( (&matching_tables).iter().map(|t| t.get::<$query_type>()).collect(), )*);
 
             result
-        }
-    }
-}
-
-fn ret<T>(a: T) -> T {
-    // let ti = TypeInfo::of::<T>().type_name.to_string();
-    a
-}
-
-#[macro_export]
-macro_rules! test {
-    (($($t: ty),*), $a: expr) => {
-        {
-            let mut strings: Vec<String> = vec![];
-            $(
-                strings.push(TypeInfo::of::<$t>().type_name.to_string());
-            )*
-            strings.iter().for_each(|s| println!("{}", s));
-            ($($a as $t,)*)
         }
     }
 }
