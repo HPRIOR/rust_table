@@ -4,40 +4,6 @@ use crate::storage::table::EntityTable;
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 
-// structure which contains a reference to the world (all tables) and a list of all matching tables
-// The structure is builder type, which subsequent queries add table id to 'matched', 'excluded' sets
-// Final Query intersects, minuses, etc the matched and excluded sets to produce a final result
-// tables are returned by using this list of ids
-// somehow the tables columns are returned with their types fully formed
-
-// seems like a macro is the way to go, something like:
-// query![
-//      world with (included types) without (excluded)
-// ]
-// This would generate a query based on the types with the query builder
-// the macro would expand the types at the end to produce a tuple of columns which can be iterated
-// over with the correct types by calling
-
-struct QueryBuilder<'a> {
-    table_map: HashMap<u32, &'a EntityTable>,
-    include: HashSet<u32>,
-    exclude: HashSet<u32>,
-    funcs: fn(Box<dyn Component>) -> dyn Component,
-}
-
-impl<'a> QueryBuilder<'a> {
-    fn with<T: Component>(self) -> QueryBuilder<'a> {
-        todo!()
-    }
-
-    fn excluding<T: Component>(self) -> QueryBuilder<'a> {
-        todo!()
-    }
-
-    fn query(self) -> Vec<Column> {
-        todo!()
-    }
-}
 
 // TODO: it would be nice to create a query interface that could return a tuple of arguments from a
 // table in one iteration e.g. Query<'a, T, U> -> for (t, u) in query {}
@@ -93,6 +59,55 @@ impl<'a, T> Iterator for Query<'a, T> {
         }
     }
 }
+pub struct QueryTuple<'a, T, U> {
+    data: Vec<(&'a [T], &'a [U])>,
+    outer_index: usize,
+    inner_index: usize,
+}
+impl<'a, T, U> QueryTuple<'a, T, U> {
+    pub fn new() -> Self {
+        Self {
+            data: vec![],
+            outer_index: 0,
+            inner_index: 0,
+        }
+    }
+
+    pub fn push(&mut self, element: (&'a [T], &'a [U])) {
+        self.data.push(element);
+    }
+}
+
+impl<'a, T, U> FromIterator<(&'a [T],&'a [U])> for QueryTuple<'a, T, U> {
+    fn from_iter<I: IntoIterator<Item = (&'a [T],&'a [U])>>(iter: I) -> Self {
+        let mut query = QueryTuple::new();
+        for element in iter {
+            query.push(element);
+        }
+        query
+    }
+}
+
+impl<'a, T, U> Iterator for QueryTuple<'a, T, U> {
+    type Item = (&'a T, &'a U);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let data = &self.data;
+
+        if self.outer_index >= data.len() {
+            None
+        } else if self.inner_index >= data[self.outer_index].0.len() {
+            self.inner_index = 0;
+            self.outer_index += 1;
+            self.next()
+        } else {
+            let outer = &data[self.outer_index];
+            let result = (&outer.0[self.inner_index] as &T, &outer.1[self.inner_index] as &U);
+            self.inner_index += 1;
+            Some(result)
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -118,18 +133,5 @@ mod tests {
         }
     }
 
-    #[test]
-    fn query_can_accept_tuples() {
-        let query: Query<(i32, u8)> = vec![
-            &[(0_i32, 1_u8), (1_i32, 2_u8), (2_i32, 3_u8), (3_i32, 4_u8)] as &[(i32, u8)],
-            &[(5_i32, 6_u8), (6_i32, 7_u8), (7_i32, 8_u8), (8_i32, 9_u8)] as &[(i32, u8)],
-        ]
-        .into_iter()
-        .collect();
-    }
-    // #[test]
-    // fn test(){
-    //     TestStruct::new();
-    // }
 
 }

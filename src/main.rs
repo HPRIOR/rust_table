@@ -11,6 +11,7 @@ use crate::storage::query::Query;
 use crate::storage::table::EntityTable;
 use std::any::TypeId;
 use std::collections::HashSet;
+use count_macro::count;
 
 #[derive(Debug)]
 struct Position {
@@ -19,7 +20,6 @@ struct Position {
 }
 
 fn main() {
-    // let mut entity = vec![12.as_component(), "as component".as_component()];
     let mut entity1 = entity![1_u8, 5_i32];
     let mut entity2 = entity![2_u8, 6_i32];
     let mut entity3 = entity![3_u8, 7_i32];
@@ -35,26 +35,14 @@ fn main() {
     table.add(entity4);
 
     let tables = vec![table];
-
-    // let a: (u32, u8) = test!((u32, u8), 1);
-    // println!("{:?}", a);
-    //
-    let (ones, twos) = query!(tables => with (u8, i32));
-
-
-
-    for one in ones{
-        println!("{}", one)
-    }
-
-    for two in twos{
-
-        println!("{}", two)
-    }
-
     create_query!(A, B);
+    let query: QueryTuple<u8, i32> = query!(tables => with (u8, i32));
 
-    let test_query: TestQuery<u32, u32>;
+    for (a, b) in query{
+        println!("{}, {}", a, b)
+    }
+
+
 
 
     // let comps: &[i32] = table.columns[0].get_components();
