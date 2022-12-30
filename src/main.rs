@@ -1,10 +1,14 @@
 #![allow(unused)]
+extern crate core;
+
 mod ecs;
 mod storage;
 
+use std::any::TypeId;
+use std::collections::HashSet;
+use crate::storage::component::TypeInfo;
+use crate::storage::table::EntityTable;
 use crate::storage::component::Component;
-use storage::component::TypeInfo;
-use storage::table::EntityTable;
 
 #[derive(Debug)]
 struct Position {
@@ -15,10 +19,10 @@ struct Position {
 
 fn main() {
     // let mut entity = vec![12.as_component(), "as component".as_component()];
-    let mut entity1 = entity![1_u8, 5_u8];
-    let mut entity2 = entity![2_u8, 6_u8];
-    let mut entity3 = entity![3_u8, 7_u8];
-    let mut entity4 = entity![4_u8, 8_u8];
+    let mut entity1 = entity![1_u8, 5_i32];
+    let mut entity2 = entity![2_u8, 6_i32];
+    let mut entity3 = entity![3_u8, 7_i32];
+    let mut entity4 = entity![4_u8, 8_i32];
 
     let type_infos: Vec<TypeInfo> = entity1.iter().map(|c| (**c).type_info()).collect();
 
@@ -31,7 +35,10 @@ fn main() {
 
     let tables  = vec![table];
 
-    query!(tables => with (i32, &str));
+    // let a: (u32, u8) = test!((u32, u8), 1);
+    // println!("{:?}", a);
+    //
+    let columns: (Vec<&[u8]>, Vec<&[i32]>) = query!(tables => with (u8,i32));
 
     // let comps: &[i32] = table.columns[0].get_components();
     // let column1 = &table.columns[0];
