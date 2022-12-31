@@ -1,6 +1,4 @@
 use crate::storage::component::TypeInfo;
-use crate::storage::query::Query;
-// use crate::storage::query::QueryTuple;
 use crate::storage::table::EntityTable;
 use count_macro::count;
 use std::any::TypeId;
@@ -23,31 +21,18 @@ macro_rules! entity {
     };
 }
 
-#[macro_export]
-macro_rules! test {
-    () => {
-        pub struct TestStruct;
-        impl TestStruct {
-            pub fn new() -> Self {
-                Self
-            }
-        }
-    };
-}
-macro_rules! type_as_underscore {
-    ($t: ty) => {
-        _
-    };
-}
+
+
 #[macro_export]
 macro_rules! create_query {
     ($($t:ident),*) => {
-        pub struct QueryTuple<'a, $($t,)*> {
+        pub struct Query<'a, $($t,)*> {
             data: Vec<($(&'a [$t]),*)>,
             outer_index: usize,
             inner_index: usize,
         }
-        impl<'a, $($t,)*> QueryTuple<'a, $($t,)*> {
+
+        impl<'a, $($t,)*> Query<'a, $($t,)*> {
             pub fn new() -> Self {
                 Self {
                     data: vec![],
@@ -60,9 +45,9 @@ macro_rules! create_query {
                 self.data.push(element);
             }
         }
-        impl<'a, $($t,)*> FromIterator<($(&'a [$t]),*)> for QueryTuple<'a, $($t,)*> {
+        impl<'a, $($t,)*> FromIterator<($(&'a [$t]),*)> for Query<'a, $($t,)*> {
             fn from_iter<I: IntoIterator<Item = ($(&'a [$t]),*)>>(iter: I) -> Self {
-                let mut query = QueryTuple::new();
+                let mut query = Query::new();
                 for element in iter {
                     query.push(element);
                 }
@@ -70,7 +55,7 @@ macro_rules! create_query {
             }
         }
 
-        impl<'a, $($t,)*> Iterator for QueryTuple<'a, $($t,)*> {
+        impl<'a, $($t,)*> Iterator for Query<'a, $($t,)*> {
             type Item = ($(&'a $t),*);
 
             fn next(&mut self) -> Option<Self::Item> {
@@ -94,6 +79,7 @@ macro_rules! create_query {
         }
     };
 }
+
 create_query!(A, B);
 
 /// POC macro, currently just collects data from exactly matching tables and returns list of lists
@@ -116,9 +102,8 @@ macro_rules! query {
 
             // let result: ($(Query<$query_type>,)*)  =
             //     ($( (&matching_tables).iter().map(|t| t.get::<$query_type>()).collect(), )*);
-
-            let result: QueryTuple<$(($query_type),)*>  =
-                (&matching_tables).iter().map(|t|{ ($((t.get::<$query_type>()),)*)}).collect();
+                let result: Query<$(($query_type),)*>  =
+                    (&matching_tables).iter().map(|t|{ ($((t.get::<$query_type>()),)*)}).collect();
 
             result
         }
