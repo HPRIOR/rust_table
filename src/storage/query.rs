@@ -12,72 +12,79 @@ use std::marker::PhantomData;
 // table in one iteration e.g. Query<'a, T, U> -> for (t, u) in query {}
 //
 
-trait TQuery {
-    type Item<'a>;
+trait TQuery<'a> {
+    type Item;
 
-    fn next_item<'a>(&mut self) -> Self::Item<'a>;
-}
-
-trait TFetcher<'a, T>{
-    fn new(query: &'a mut T) -> Box<dyn Self>;
-}
-
-struct Fetcher<'a, T: TQuery> {
-    query: &'a mut T,
-}
-
-impl<'a, T: TQuery> TFetcher<'a, T> for Fetcher<'a, T> {
-    fn new(query: &'a mut T) -> Self {
-        Self {
-            query
-        }
-    }
+    fn next_item(&mut self) -> Self::Item;
+    fn to_trait(self) -> Box<dyn TQuery<'a, Item=Self::Item> + 'a>;
 }
 
 
-impl<'a, T: TQuery> Iterator for Fetcher<'a, T> {
-    type Item = <T as TQuery>::Item<'a>;
+impl<'a, T> TQuery<'a> for Query<'a, T> {
+    type Item = &'a T;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let query = &mut self.query;
-        Some(query.next_item())
-    }
-}
-
-impl<'a, T> TQuery for Query<'a, T> {
-    type Item<'q> = &'a T;
-
-    fn next_item<'q>(&mut self) -> Self::Item<'q> {
+    fn next_item(&mut self) -> Self::Item {
         self.next().unwrap()
     }
-}
 
-struct QueryTuple<'a, T, U>((Query<'a, T>, Query<'a, U>));
-
-
-impl<'a, T, U> TQuery for QueryTuple<'a, T, U> {
-    type Item<'q> = (&'a T, &'a U);
-
-    fn next_item<'q>(&mut self) -> Self::Item<'q> {
-        (self.0.0.next().unwrap(), self.0.1.next().unwrap())
+    fn to_trait(self) -> Box<dyn TQuery<'a, Item=Self::Item> + 'a> {
+        Box::new(self)
     }
 }
 
-fn use_query_interface<'a, T: TQuery>(tables: Vec<EntityTable>) -> Box<dyn TFetcher<'a, T>> {
+struct QueryTuple<'a, T, U>(Query<'a, T>, Query<'a, U>);
+
+impl<'a, T, U> TQuery<'a> for QueryTuple<'a, T, U> {
+    type Item = (&'a T, &'a U);
+
+    fn next_item(&mut self) -> Self::Item {
+        (self.0.next().unwrap(), self.1.next().unwrap())
+    }
+
+    fn to_trait(self) -> Box<dyn TQuery<'a, Item=Self::Item> + 'a> {
+        Box::new(self)
+    }
+}
+
+impl<'a, T, U> TQuery<'a> for (Query<'a, T>, Query<'a, U>) {
+    type Item = (&'a T, &'a U);
+
+    fn next_item(&mut self) -> Self::Item {
+        (self.0.next().unwrap(), self.1.next().unwrap())
+    }
+
+    fn to_trait(self) -> Box<dyn TQuery<'a, Item=Self::Item> + 'a> {
+        Box::new(self)
+    }
+}
+
+
+fn use_query_interface<'a, Q, C, A>(tables: &'a Vec<EntityTable>) -> Q
+    where Q: TQuery<'a, Item=(C, A)> + FromIterator<(&'a [C], &'a [A])>,
+          C: Component,
+          A: Component
+
+{
     let mut type_ids: HashSet<TypeId> = HashSet::new();
-    let type_id1 = TypeInfo::of::<u32>().id;
+    let type_id1 = TypeInfo::of::<C>().id;
     type_ids.insert(type_id1);
 
     let matching_tables: Vec<&EntityTable> =
         tables.iter().filter(|t| t.has_signature(&type_ids)).collect();
 
     // generate queries
-    let mut query_one: Query<i32> =
-        (&matching_tables).iter().map(|t| (t.get::<i32>())).collect();
 
+    let mut query: Q =
+        (&matching_tables)
+            .iter()
+            .map(|t| (t.get::<C>())).
+            zip(
+                (&matching_tables)
+                    .iter()
+                    .map(|t| (t.get::<A>())))
+            .collect();
 
-    let fetcher = Fetcher::new(&mut query_one);
-    Box::new(fetcher)
+    query
 }
 
 pub struct Query<'a, T> {
@@ -100,13 +107,36 @@ impl<'a, T> Query<'a, T> {
     }
 }
 
-impl<'a, T> FromIterator<&'a [T]> for Query<'a, T> {
+impl<'a, T: Component> FromIterator<&'a [T]> for Query<'a, T> {
     fn from_iter<I: IntoIterator<Item=&'a [T]>>(iter: I) -> Self {
         let mut query = Query::new();
         for element in iter {
             query.push(element);
         }
         query
+    }
+}
+
+impl<'a, T: Component> FromIterator<&'a mut [T]> for Query<'a, T> {
+    fn from_iter<I: IntoIterator<Item=&'a mut [T]>>(iter: I) -> Self {
+        let mut query = Query::new();
+        for element in iter {
+            query.push(element);
+        }
+        query
+    }
+}
+
+impl<'a, T: Component, U: Component> FromIterator<(&'a [T], &'a [U])> for QueryTuple<'a, T, U> {
+    fn from_iter<I: IntoIterator<Item=(&'a [T], &'a [U])>>(iter: I) -> Self {
+        let mut query_one = Query::new();
+        let mut query_two = Query::new();
+        for element in iter {
+            query_one.push(element.0);
+            query_two.push(element.1);
+        }
+
+        QueryTuple(query_one, query_two)
     }
 }
 
