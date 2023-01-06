@@ -212,9 +212,9 @@ pub struct FetchRead<'a, T> {
 }
 
 impl<'a, T: Component> Fetch for FetchRead<'a, T> {
-    type Item<'e> = T;
+    type Item<'a> = T;
 
-    fn execute(&self) -> &[T] {
+    fn execute<'a>(&self) -> &'a [T] {
         self.data
     }
     fn new(tables: &Vec<EntityTable>) -> Self {
@@ -254,8 +254,7 @@ impl<Q: Query> Start<Q> {
     }
 
     fn execute<'a>(&self) -> &'a [<Q as Query>::Item<'a>] {
-        let fetcher = Q::Fetch::new(&self.tables);
-        Q::get(&fetcher)
+        Q::get(&Q::Fetch::new(&self.tables))
     }
 }
 
@@ -272,4 +271,7 @@ fn test() {
 
     let start: Start<&i32> = Start::new(tables);
     let data = start.execute();
+    for element in data {
+        println!("{}", element);
+    }
 }
