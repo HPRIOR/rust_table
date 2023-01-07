@@ -17,7 +17,7 @@ pub trait Query
 pub trait Fetch {
     type Item<'a>;
 
-    fn execute<'a>(table: &'a EntityTable) -> Self::Item<'a>;
+    fn execute(table: &EntityTable) -> Self::Item<'_>;
     fn new() -> Self;
 }
 
