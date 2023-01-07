@@ -26,7 +26,7 @@ pub struct FetchRead<T> (PhantomData<T>);
 impl<T: Component> Fetch for FetchRead<T> {
     type Item<'a> = &'a [T];
 
-    fn execute<'a>(table: &'a EntityTable) -> Self::Item<'a> {
+    fn execute(table: &EntityTable) -> Self::Item<'_> {
         if table.has::<T>() {
             println!("table found with type {}", TypeInfo::of::<T>().type_name);
             table.get::<T>()
@@ -41,7 +41,7 @@ impl<T: Component> Fetch for FetchRead<T> {
 impl<A: Fetch, B: Fetch> Fetch for (A, B) {
     type Item<'a> = (A::Item<'a>, B::Item<'a>);
 
-    fn execute<'a>(table: &'a EntityTable) -> Self::Item<'a> {
+    fn execute(table: &EntityTable) -> Self::Item<'_> {
         (A::execute(&table), B::execute(&table))
     }
 
