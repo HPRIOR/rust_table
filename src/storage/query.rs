@@ -198,22 +198,22 @@ pub trait Query
 
     type Fetch: Fetch;
 
-    fn get<'a>(fetch: &Self::Fetch, table: &'a EntityTable) -> &'a [Self::Item<'a>];
+    fn get<'a>(fetch: &Self::Fetch, table: &'a EntityTable) -> Self::Item<'a>;
 }
 
 pub trait Fetch {
     type Item<'a>;
 
-    fn execute<'a>(table: &EntityTable) -> &[Self::Item<'a>];
+    fn execute<'a>(table: &'a EntityTable) -> Self::Item<'a>;
     fn new() -> Self;
 }
 
 pub struct FetchRead<T> (PhantomData<T>);
 
 impl<T: Component> Fetch for FetchRead<T> {
-    type Item<'a> = T;
+    type Item<'a> = &'a [T];
 
-    fn execute<'a>(table: &EntityTable) -> &[Self::Item<'a>] {
+    fn execute<'a>(table: &'a EntityTable) -> Self::Item<'a> {
         if table.has::<T>() {
             println!("table found with type {}", TypeInfo::of::<T>().type_name);
             table.get::<T>()
@@ -226,19 +226,22 @@ impl<T: Component> Fetch for FetchRead<T> {
 }
 
 impl<'a, T: Component> Query for &'a T {
-    type Item<'b> = T;
+    type Item<'b> = &'b [T];
 
     type Fetch = FetchRead<T>;
 
-    fn get<'b>(fetch: &Self::Fetch, table: &'b EntityTable) -> &'b [Self::Item<'b>] {
+    fn get<'b>(fetch: &Self::Fetch, table: &'b EntityTable) -> Self::Item<'b> {
         Self::Fetch::execute(table)
     }
 }
 
 // impl<A: Fetch, B:Fetch> Fetch for (A, B){
-//     type Item<'a> = (A, B);
+//     type Item<'a> = (A::Item<'a>, B::Item<'a>);
 //
+//     // this constraint is going to require that I return a tuple of 
 //     fn execute<'a>(table: &EntityTable) -> &[Self::Item<'a>] {
+//         let result = (A::execute(&table), B::execute(table));
+//         result
 //
 //     }
 //
@@ -255,7 +258,7 @@ impl<'a, T: Component> Query for &'a T {
 //         todo!()
 //     }
 // }
-
+//
 pub struct Start<Q: Query> {
     tables: Vec<EntityTable>,
     _marker: PhantomData<Q>,
@@ -269,7 +272,7 @@ impl<Q: Query> Start<Q> {
         }
     }
 
-    fn execute<'a>(&'a self) -> &[<Q as Query>::Item<'a>] {
+    fn execute<'a>(&'a self) -> <Q as Query>::Item<'a> {
         let fetcher = Q::Fetch::new();
         let result = Q::get(&fetcher, &self.tables[0]);
         result
@@ -287,7 +290,7 @@ pub fn test() {
 
     let tables = vec![table];
 
-    let start: Start<&f32> = Start::new(tables);
+    let start: Start<&i32> = Start::new(tables);
     let data = start.execute();
     for element in data {
         println!("{}", element);
