@@ -1,15 +1,47 @@
 use std::marker::PhantomData;
 use std::path::Iter;
+use crate::ecs::World;
 use crate::entity;
 use crate::storage::component::TypeInfo;
 
 use super::{component::Component, table::EntityTable};
 
-// TODO: current query will return a single array slice from a single table.
-// In a real case several tables would be queries for matching types, and a 2d array would be returned
-// create an abstraction that would allow for the iterating over multiple arrays of a particular type
-// and for tuples of various types
-// create macros too
+// TODO: take in 'world' from query. Come up with some solution that can filter the world for the
+// relevant tables for a given query and pass these onto the fetch and query methods. The query result
+// should also accept a nested array to account for the query across multiple tables
+
+// After this is implemented, there needs to be a way of iterating over the nested sequence as if
+// it were a homogenous sequence
+// This is difficult as the Iterator cannot be implemented on tuples - ideal I would just write
+// an iterator for QueryResult, and then another iterator on successive generic tuple combinations
+// where T implements Query result. But this is not possible unless you wrap the tuple inside of a struct.
+// A new struct would need to be created for every combination of tuple, and an iterator implemented for that.
+
+// one route might be to implement iterator directly on the QueryExecutor,
+// or generate another Iterator implementation of the QueryExecutor results
+
+// After this mutable queries need to be made. Hopefully this will just be another impl if the traits
+// which are currently working for borrows.
+
+// Then different types of queries should be allowed.
+// E.g.
+    // Get type with type but not y
+    //  Get type with othertype
+    // get type with othertype but not type
+
+
+// concurrency and efficiencies
+// concurrent iteration for borrows
+// fast table lookups for quires (hashing and signatures)
+
+// Entities
+// lookup and removal of entities
+// removing components from entities, reorganising tables as a result, dynamic graph implementation
+// to find relevant tables to move entities in and out of
+
+
+
+
 
 trait QueryResult {
     type Item;
@@ -154,16 +186,14 @@ impl<'a, T: Component> Query for &'a T {
 }
 
 pub struct QueryExecutor<'a, Q: Query> {
-    tables: &'a Vec<EntityTable>,
-    data: Option<&'a [Q::Item<'a>]>,
+    world: &'a World,
     _marker: PhantomData<Q>,
 }
 
 impl<'a, Q: Query> QueryExecutor<'a, Q> {
-    pub fn new(tables: &'a Vec<EntityTable>) -> Self {
+    pub fn new(world: &'a World) -> Self {
         Self {
-            tables,
-            data: None,
+            world,
             _marker: PhantomData::default(),
         }
     }
@@ -171,15 +201,8 @@ impl<'a, Q: Query> QueryExecutor<'a, Q> {
     pub fn execute(&self) -> <Q as Query>::Item<'_> {
         let fetcher = Q::Fetch::new();
         // no logic to fetch the correct data from a range of queries yet
-        let result = Q::get(&fetcher, &self.tables[0]);
+        let result = Q::get(&fetcher, &self.world.entity_tables[0]);
         result
-    }
-    pub fn execute_on_self(&mut self) {
-        let fetcher = Q::Fetch::new();
-        // no logic to fetch the correct data from a range of queries yet
-        let result = Q::get(&fetcher, &self.tables[0]);
-        todo!()
-        // self.data = Some(result);
     }
 }
 
@@ -201,8 +224,9 @@ pub fn test() {
     });
 
     let tables = vec![table];
+    let world = World::new_vec(tables);
 
-    let start: QueryExecutor<(&i32, &f32)> = QueryExecutor::new(&tables);
+    let start: QueryExecutor<(&i32, &f32)> = QueryExecutor::new(&world);
     let data = start.execute();
 
     let v: Vec<(&i32, &f32)> = data.0.iter().zip(data.1.iter()).collect();

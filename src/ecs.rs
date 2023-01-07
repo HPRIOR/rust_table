@@ -1,8 +1,9 @@
 use crate::storage::{component::Component, table::EntityTable};
+use crate::storage::component::TypeInfo;
 use crate::storage::query::{Query, QueryExecutor};
 
 pub struct World {
-    entity_tables: Vec<EntityTable>,
+    pub entity_tables: Vec<EntityTable>,
 }
 
 impl World {
@@ -21,8 +22,11 @@ impl World {
         // return some entity ID that can reference an entity 
     }
 
-    fn query<'a, Q: Query + 'a>(&'a self) -> QueryExecutor<Q> {
-        QueryExecutor::new(&self.entity_tables)
+
+    fn query<'a, Q: Query + 'a + 'static>(&'a self) -> QueryExecutor<Q> {
+        let type_info = TypeInfo::of::<Q>();
+        // println!("type of query {}", type_info.type_name);
+        QueryExecutor::new(self)
     }
 }
 
@@ -33,6 +37,7 @@ mod tests {
     use crate::storage::component::TypeInfo;
     use crate::storage::table::EntityTable;
     use crate::storage::component::Component;
+    use crate::storage::query::Query;
 
     #[test]
     fn test() {
@@ -47,12 +52,18 @@ mod tests {
         let tables = vec![table];
         let ecs = World::new_vec(tables);
 
-        let query  = ecs.query::<&i32>();
+        let ref_info = TypeInfo::of::<&i32>();
+        let literal_info = TypeInfo::of::<i32>();
+
+        println!("{:#?}", ref_info);
+        println!("{:#?}", literal_info);
+
+        let query = ecs.query::<(&i32, &f32)>();
         let result = query.execute();
 
-        for element in result{
-            println!("{:#?}", element);
-        }
+        // for element in result{
+        //     println!("{:#?}", element);
+        // }
     }
 }
 
