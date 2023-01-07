@@ -25,9 +25,9 @@ use super::{component::Component, table::EntityTable};
 
 // Then different types of queries should be allowed.
 // E.g.
-    // Get type with type but not y
-    //  Get type with othertype
-    // get type with othertype but not type
+// Get type with type but not y
+//  Get type with othertype
+// get type with othertype but not type
 
 
 // concurrency and efficiencies
@@ -40,12 +40,15 @@ use super::{component::Component, table::EntityTable};
 // to find relevant tables to move entities in and out of
 
 
-
-
-
 trait QueryResult {
     type Item;
     fn next_item(&mut self) -> Option<Self::Item>;
+}
+
+impl<'a, T: Component> From<&'a [&'a [T]]> for ReadQueryResult<'a, T> {
+    fn from(value: &'a [&'a [T]]) -> Self {
+        ReadQueryResult::new(value)
+    }
 }
 
 struct ReadQueryResult<'a, T: Component> {
@@ -103,6 +106,13 @@ impl<A: QueryResult, B: QueryResult> QueryIterator for (A, B) {
 
 // This is problematic. In order to define more tuples, more structs would need to be defined on each tuple combination.
 struct QueryResultTuple<A: QueryResult, B: QueryResult>((A, B));
+
+impl<A: QueryResult, B: QueryResult> From<(A, B)> for QueryResultTuple<A, B> {
+    fn from(value: (A, B)) -> Self {
+        QueryResultTuple(value)
+    }
+}
+
 
 impl<A: QueryResult, B: QueryResult> Iterator for QueryResultTuple<A, B> {
     type Item = (A::Item, B::Item);
@@ -214,6 +224,7 @@ impl<'q, Q: Query> Iterator for QueryExecutor<'q, Q> {
     }
 }
 
+
 pub fn test() {
     let init_entity = entity![1 + 1 as i32, (1 / 2) as f32];
     let type_infos: Vec<TypeInfo> = init_entity.iter().map(|c| (**c).type_info()).collect();
@@ -226,14 +237,15 @@ pub fn test() {
     let tables = vec![table];
     let world = World::new_vec(tables);
 
-    let start: QueryExecutor<(&i32, &f32)> = QueryExecutor::new(&world);
-    let data = start.execute();
+    let start: QueryExecutor<&i32> = QueryExecutor::new(&world);
+    // let data: ReadQueryResult<i32> = start.execute().into();
 
-    let v: Vec<(&i32, &f32)> = data.0.iter().zip(data.1.iter()).collect();
 
-    for (a, b) in v {
-        println!("{},{}", a, b)
-    }
+    // let v: Vec<(&i32, &f32)> = data.0.iter().zip(data.1.iter()).collect();
+    //
+    // for (a, b) in v {
+    //     println!("{},{}", a, b)
+    // }
 }
 
 
