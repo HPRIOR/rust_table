@@ -4,6 +4,8 @@ use crate::storage::component::TypeInfo;
 
 use super::{component::Component, table::EntityTable};
 
+
+
 pub trait Query
 {
     // same as self
@@ -17,7 +19,7 @@ pub trait Query
 pub trait Fetch {
     type Item<'a>;
 
-    fn execute(table: &EntityTable) -> Self::Item<'_>;
+    fn fetch(table: &EntityTable) -> Self::Item<'_>;
     fn new() -> Self;
 }
 
@@ -26,7 +28,7 @@ pub struct FetchRead<T> (PhantomData<T>);
 impl<T: Component> Fetch for FetchRead<T> {
     type Item<'a> = &'a [T];
 
-    fn execute(table: &EntityTable) -> Self::Item<'_> {
+    fn fetch(table: &EntityTable) -> Self::Item<'_> {
         if table.has::<T>() {
             println!("table found with type {}", TypeInfo::of::<T>().type_name);
             table.get::<T>()
@@ -41,8 +43,8 @@ impl<T: Component> Fetch for FetchRead<T> {
 impl<A: Fetch, B: Fetch> Fetch for (A, B) {
     type Item<'a> = (A::Item<'a>, B::Item<'a>);
 
-    fn execute(table: &EntityTable) -> Self::Item<'_> {
-        (A::execute(&table), B::execute(&table))
+    fn fetch(table: &EntityTable) -> Self::Item<'_> {
+        (A::fetch(&table), B::fetch(&table))
     }
 
     fn new() -> Self {
@@ -51,11 +53,15 @@ impl<A: Fetch, B: Fetch> Fetch for (A, B) {
 }
 
 impl<A: Query, B: Query> Query for (A, B) {
-    type Item<'a> = (<<A as Query>::Fetch as Fetch>::Item<'a>, <<B as Query>::Fetch as Fetch>::Item<'a>);
+    type Item<'a> = (
+        <<A as Query>::Fetch as Fetch>::Item<'a>,
+        <<B as Query>::Fetch as Fetch>::Item<'a>
+    );
+
     type Fetch = (A::Fetch, B::Fetch);
 
     fn get<'a>(fetch: &Self::Fetch, table: &'a EntityTable) -> Self::Item<'a> {
-        Self::Fetch::execute(table)
+        Self::Fetch::fetch(table)
     }
 }
 
@@ -66,24 +72,24 @@ impl<'a, T: Component> Query for &'a T {
     type Fetch = FetchRead<T>;
 
     fn get<'b>(fetch: &Self::Fetch, table: &'b EntityTable) -> Self::Item<'b> {
-        Self::Fetch::execute(table)
+        Self::Fetch::fetch(table)
     }
 }
 
-pub struct Start<Q: Query> {
-    tables: Vec<EntityTable>,
+pub struct QueryExecutor<'a, Q: Query> {
+    tables: &'a Vec<EntityTable>,
     _marker: PhantomData<Q>,
 }
 
-impl<Q: Query> Start<Q> {
-    fn new(tables: Vec<EntityTable>) -> Self {
+impl<'a, Q: Query> QueryExecutor<'a, Q> {
+    pub fn new(tables: &'a Vec<EntityTable>) -> Self {
         Self {
             tables,
             _marker: PhantomData::default(),
         }
     }
 
-    fn execute(&self) -> <Q as Query>::Item<'_> {
+    pub fn execute(&self) -> <Q as Query>::Item<'_> {
         let fetcher = Q::Fetch::new();
         let result = Q::get(&fetcher, &self.tables[0]);
         result
@@ -101,7 +107,7 @@ pub fn test() {
 
     let tables = vec![table];
 
-    let start: Start<(&i32, &f32)> = Start::new(tables);
+    let start: QueryExecutor<(&i32, &f32)> = QueryExecutor::new(&tables);
     let data = start.execute();
 
     let v: Vec<(&i32, &f32)> = data.0.iter().zip(data.1.iter()).collect();

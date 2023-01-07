@@ -1,14 +1,18 @@
 use crate::storage::{component::Component, table::EntityTable};
+use crate::storage::query::{Query, QueryExecutor};
 
-pub struct ECS {
-    entity_tables: Box<[EntityTable]>,
+pub struct World {
+    entity_tables: Vec<EntityTable>,
 }
 
-impl ECS {
+impl World {
     pub fn new() -> Self {
         Self {
-            entity_tables: Box::new([]),
+            entity_tables: vec![]
         }
+    }
+    pub fn new_vec(tables: Vec<EntityTable>) -> Self {
+        Self { entity_tables: tables }
     }
 
     pub fn spawn_entity(&mut self, entities: Vec<Box<dyn Component>>) {
@@ -17,15 +21,38 @@ impl ECS {
         // return some entity ID that can reference an entity 
     }
 
-    // TODO
-    // - entity concept, some identifier for an entity that can be used to find it in a table 
-    // - removing/adding components to an entity (creating/updating tables with new entity)
-    //      There are some efficiencies that can be made here with graph from one table to another 
-    // - entity signature/hash - unique id for table that can quickly get table for a given entity 
-    //      based on what types it contains
-    // - flesh out column data structure (removing entities, Drop, Deref, DerefMut, ZSTs )
-    // - create macro entity![13, "something", Position(10, 20)]
-
-
-
+    fn query<'a, Q: Query + 'a>(&'a self) -> QueryExecutor<Q> {
+        QueryExecutor::new(&self.entity_tables)
+    }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::ecs::World;
+    use crate::entity;
+    use crate::storage::component::TypeInfo;
+    use crate::storage::table::EntityTable;
+    use crate::storage::component::Component;
+
+    #[test]
+    fn test() {
+        let init_entity = entity![1 + 1 as i32, (1 / 2) as f32];
+        let type_infos: Vec<TypeInfo> = init_entity.iter().map(|c| (**c).type_info()).collect();
+        let mut table = EntityTable::new(type_infos);
+        (0..10).for_each(|n| {
+            let mut entity = entity![n + 1 as i32, (n / 2) as f32];
+            table.add(entity);
+        });
+
+        let tables = vec![table];
+        let ecs = World::new_vec(tables);
+
+        let query  = ecs.query::<&i32>();
+        let result = query.execute();
+
+        for element in result{
+            println!("{:#?}", element);
+        }
+    }
+}
+
