@@ -4,7 +4,10 @@ use crate::storage::component::TypeInfo;
 
 use super::{component::Component, table::EntityTable};
 
-
+// TODO: current query will return a single array slice from a single table.
+// In a real case several tables would be queries for matching types, and a 2d array would be returned
+// create an abstraction that would allow for the iterating over multiple arrays of a particular type
+// and for tuples of various types
 
 pub trait Query
 {
