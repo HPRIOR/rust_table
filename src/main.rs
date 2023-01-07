@@ -1,5 +1,4 @@
 #![allow(unused)]
-extern crate core;
 
 mod ecs;
 mod storage;
@@ -11,6 +10,7 @@ use crate::storage::table::EntityTable;
 use std::any::TypeId;
 use std::collections::HashSet;
 use count_macro::count;
+use crate::storage::query::test;
 // use storage::query::Query;
 // use storage::query::QueryTuple;
 // use storage::query::use_query_interface;
@@ -40,8 +40,10 @@ fn main() {
     //     println!("{}, {}", a, b)
     // }
     //
-    let t = TypeInfo::of::<&i32>();
-    println!("{:#?}", t)
+    // let t = TypeInfo::of::<&i32>();
+    // println!("{:#?}", t)
+
+    test();
 
 
 

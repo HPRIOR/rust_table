@@ -193,52 +193,68 @@ use super::{component::Component, table::EntityTable};
 
 pub trait Query
 {
+    // same as self
     type Item<'a>;
 
     type Fetch: Fetch;
 
-    fn get<'a>(fetch: &Self::Fetch) -> &[Self::Item<'a>];
+    fn get<'a>(fetch: &Self::Fetch, table: &'a EntityTable) -> &'a [Self::Item<'a>];
 }
 
 pub trait Fetch {
     type Item<'a>;
 
-    fn execute<'a>(&self) -> &'a [Self::Item<'a>];
-    fn new(tables: &Vec<EntityTable>) -> Self;
+    fn execute<'a>(table: &EntityTable) -> &[Self::Item<'a>];
+    fn new() -> Self;
 }
 
-pub struct FetchRead<'a, T> {
-    data: &'a [T],
-}
+pub struct FetchRead<T> (PhantomData<T>);
 
-impl<'a, T: Component> Fetch for FetchRead<'a, T> {
+impl<T: Component> Fetch for FetchRead<T> {
     type Item<'a> = T;
 
-    fn execute<'a>(&self) -> &'a [T] {
-        self.data
-    }
-    fn new(tables: &Vec<EntityTable>) -> Self {
-        let data = tables
-            .iter()
-            .filter(|t| t.has::<T>())
-            .nth(0)
-            .unwrap()
-            .get::<T>();
-        Self {
-            data
+    fn execute<'a>(table: &EntityTable) -> &[Self::Item<'a>] {
+        if table.has::<T>() {
+            println!("table found with type {}", TypeInfo::of::<T>().type_name);
+            table.get::<T>()
+        } else {
+            panic!("table not found with type {}", TypeInfo::of::<T>().type_name);
         }
     }
+
+    fn new() -> Self { Self { 0: Default::default() } }
 }
 
 impl<'a, T: Component> Query for &'a T {
-    type Item<'e> = T;
+    type Item<'b> = T;
 
-    type Fetch = FetchRead<'a, T>;
+    type Fetch = FetchRead<T>;
 
-    fn get<'e>(fetch: &Self::Fetch) -> &[Self::Item<'e>] {
-        fetch.data
+    fn get<'b>(fetch: &Self::Fetch, table: &'b EntityTable) -> &'b [Self::Item<'b>] {
+        Self::Fetch::execute(table)
     }
 }
+
+// impl<A: Fetch, B:Fetch> Fetch for (A, B){
+//     type Item<'a> = (A, B);
+//
+//     fn execute<'a>(table: &EntityTable) -> &[Self::Item<'a>] {
+//
+//     }
+//
+//     fn new() -> Self {
+//         (A::new(), B::new())
+//     }
+// }
+//
+// impl<A: Query, B: Query> Query for (A, B){
+//     type Item<'q> = (A::Item<'q>, B::Item<'q>);
+//     type Fetch = (A::Fetch, B::Fetch);
+//
+//     fn get<'a>(fetch: &Self::Fetch, table: &'a EntityTable) -> &'a [Self::Item<'a>] {
+//         todo!()
+//     }
+// }
 
 pub struct Start<Q: Query> {
     tables: Vec<EntityTable>,
@@ -253,12 +269,14 @@ impl<Q: Query> Start<Q> {
         }
     }
 
-    fn execute<'a>(&self) -> &'a [<Q as Query>::Item<'a>] {
-        Q::get(&Q::Fetch::new(&self.tables))
+    fn execute<'a>(&'a self) -> &[<Q as Query>::Item<'a>] {
+        let fetcher = Q::Fetch::new();
+        let result = Q::get(&fetcher, &self.tables[0]);
+        result
     }
 }
 
-fn test() {
+pub fn test() {
     let init_entity = entity![1 + 1 as i32, (1 / 2) as f32];
     let type_infos: Vec<TypeInfo> = init_entity.iter().map(|c| (**c).type_info()).collect();
     let mut table = EntityTable::new(type_infos);
@@ -269,7 +287,7 @@ fn test() {
 
     let tables = vec![table];
 
-    let start: Start<&i32> = Start::new(tables);
+    let start: Start<&f32> = Start::new(tables);
     let data = start.execute();
     for element in data {
         println!("{}", element);
