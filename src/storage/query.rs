@@ -8,6 +8,7 @@ use crate::storage::component::TypeInfo;
 
 use super::{component::Component, table::EntityTable};
 
+// random notes:
 // TODO: take in 'world' from query. Come up with some solution that can filter the world for the
 // relevant tables for a given query and pass these onto the fetch and query methods. The query result
 // should also accept a nested array to account for the query across multiple tables
@@ -32,6 +33,21 @@ use super::{component::Component, table::EntityTable};
 // For without indexes are added to another list
 // The difference is what is used to generate the final table. Wouldn't be so bad if they were
 // hashmaps of each table
+
+// Query<(&i32, &u8, Without<bool>)> This interface is more complicated than it's worth. If Without
+// implements Query then it must return some value which will be added to the returned tuple. Instead,
+// stick with the current implementation and use a builder pattern to modify query before it's executed:
+// let query =
+//      QueryExecutor<(A, B)>::new()
+//          .get::<(A, B)>()        // registers call back for execute
+//          .except::<C>()
+//          .some_filter::<T>()
+//          .some_other_filter::<U>()
+//          .execute();
+
+// would still be worth splitting the Filter trait out from query so subsequent filter only methods
+// can be used without attachment to query trait (interface seg principle?)
+
 
 
 // After this is implemented, there needs to be a way of iterating over the nested sequence as if
@@ -129,7 +145,8 @@ impl<A: QueryResult, B: QueryResult> QueryIterator for (A, B) {
 }
 
 
-// This is problematic. In order to define more tuples, more structs would need to be defined on each tuple combination.
+// This is problematic. In order to define more tuples, more structs would need to
+// be defined on each tuple combination.
 struct QueryResultTuple<A: QueryResult, B: QueryResult>((A, B));
 
 impl<A: QueryResult, B: QueryResult> From<(A, B)> for QueryResultTuple<A, B> {
