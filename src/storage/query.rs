@@ -45,17 +45,19 @@ trait QueryResult {
     fn next_item(&mut self) -> Option<Self::Item>;
 }
 
-impl<'a, T: Component> From<&'a [&'a [T]]> for ReadQueryResult<'a, T> {
-    fn from(value: &'a [&'a [T]]) -> Self {
+impl<'a, T: Component> From<Vec<&'a [T]>> for ReadQueryResult<'a, T> {
+    fn from(value: Vec<&'a [T]>) -> Self {
         ReadQueryResult::new(value)
     }
 }
 
 struct ReadQueryResult<'a, T: Component> {
-    results: &'a [&'a [T]],
+    results: Vec<&'a [T]>,
     index_inner: usize,
     index_outer: usize,
 }
+
+
 
 impl<'a, T: Component> QueryResult for ReadQueryResult<'a, T> {
     type Item = &'a T;
@@ -76,7 +78,7 @@ impl<'a, T: Component> QueryResult for ReadQueryResult<'a, T> {
 }
 
 impl<'a, T: Component> ReadQueryResult<'a, T> {
-    fn new(results: &'a [&'a [T]]) -> Self {
+    fn new(results: Vec<&'a [T]>) -> Self {
         Self { results, index_inner: Default::default(), index_outer: Default::default() }
     }
 }
@@ -130,39 +132,37 @@ pub trait Query
 
     type Fetch: Fetch;
 
-    fn get<'a>(fetch: &Self::Fetch, table: &'a EntityTable) -> Self::Item<'a>;
+    fn get<'a>(fetch: &Self::Fetch, table: &'a Vec<EntityTable>) -> Self::Item<'a>;
 }
 
 pub trait Fetch {
     type Item<'a>;
 
-    fn fetch(table: &EntityTable) -> Self::Item<'_>;
+    fn fetch(table: &Vec<EntityTable>) -> Self::Item<'_>;
     fn new() -> Self;
 }
 
 pub struct FetchRead<T> (PhantomData<T>);
 
 impl<T: Component> Fetch for FetchRead<T> {
-    type Item<'a> = &'a [T];
+    type Item<'a> = Vec<&'a [T]>;
 
-    // this will need to change to take a reference to World
-    // and query across multiple tables
-    fn fetch(table: &EntityTable) -> Self::Item<'_> {
-        if table.has::<T>() {
-            println!("table found with type {}", TypeInfo::of::<T>().type_name);
-            table.get::<T>()
-        } else {
-            panic!("table not found with type {}", TypeInfo::of::<T>().type_name);
-        }
+    /// Assumes tables have been checked for the existence of T before executing
+    fn fetch(table: &Vec<EntityTable>) -> Self::Item<'_> {
+        table.iter().map(|table| table.get::<T>()).collect()
     }
 
     fn new() -> Self { Self { 0: Default::default() } }
 }
 
+
+// Tuple implementation for Fetch - todo create macro
+// Recursive definition for tuples. Fetch is implemented on tuples of Fetch, calling the base on each
+// one to derive a tuple result.
 impl<A: Fetch, B: Fetch> Fetch for (A, B) {
     type Item<'a> = (A::Item<'a>, B::Item<'a>);
 
-    fn fetch(table: &EntityTable) -> Self::Item<'_> {
+    fn fetch(table: &Vec<EntityTable>) -> Self::Item<'_> {
         (A::fetch(&table), B::fetch(&table))
     }
 
@@ -179,18 +179,18 @@ impl<A: Query, B: Query> Query for (A, B) {
 
     type Fetch = (A::Fetch, B::Fetch);
 
-    fn get<'a>(fetch: &Self::Fetch, table: &'a EntityTable) -> Self::Item<'a> {
+    fn get<'a>(fetch: &Self::Fetch, table: &'a Vec<EntityTable>) -> Self::Item<'a> {
         Self::Fetch::fetch(table)
     }
 }
 
 
 impl<'a, T: Component> Query for &'a T {
-    type Item<'b> = &'b [T];
+    type Item<'b> = Vec<&'b [T]>;
 
     type Fetch = FetchRead<T>;
 
-    fn get<'b>(fetch: &Self::Fetch, table: &'b EntityTable) -> Self::Item<'b> {
+    fn get<'b>(fetch: &Self::Fetch, table: &'b Vec<EntityTable>) -> Self::Item<'b> {
         Self::Fetch::fetch(table)
     }
 }
@@ -208,10 +208,12 @@ impl<'a, Q: Query> QueryExecutor<'a, Q> {
         }
     }
 
+    /// Provides Fetch and Query abstractions with required world data. The implementation
+    /// of Query and Fetch depends on the type that's implemented Query (e.g. &T -> Borrow; &mut T -> mutable borrow)
+    /// Hence, query can be made using the types passed to this generic function
     pub fn execute(&self) -> <Q as Query>::Item<'_> {
         let fetcher = Q::Fetch::new();
-        // no logic to fetch the correct data from a range of queries yet
-        let result = Q::get(&fetcher, &self.world.entity_tables[0]);
+        let result = Q::get(&fetcher, &self.world.entity_tables);
         result
     }
 }
@@ -238,14 +240,15 @@ pub fn test() {
     let world = World::new_vec(tables);
 
     let start: QueryExecutor<&i32> = QueryExecutor::new(&world);
-    // let data: ReadQueryResult<i32> = start.execute().into();
 
 
-    // let v: Vec<(&i32, &f32)> = data.0.iter().zip(data.1.iter()).collect();
-    //
-    // for (a, b) in v {
-    //     println!("{},{}", a, b)
-    // }
+    let data: ReadQueryResult<i32> = start.execute().into();
+
+    for d in data {
+        println!("{}", d)
+    }
+
+
 }
 
 
@@ -255,7 +258,7 @@ mod tests {
 
     #[test]
     fn query_result_can_iter_over_nested() {
-        let result: &[&[i32]] = &[&[1, 2, 3, 4], &[5, 6, 7, 8], &[9, 10, 11, 12]];
+        let result: Vec<&[i32]> = vec![&[1, 2, 3, 4], &[5, 6, 7, 8], &[9, 10, 11, 12]];
         let expected = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
         let mut query_result = ReadQueryResult::new(result);
         query_result.into_iter().zip(expected).for_each(|(a, b)| assert_eq!(a, b));
@@ -265,8 +268,8 @@ mod tests {
     fn query_result_can_iter_over_nested_tuple() {
         let result: QueryResultTuple<ReadQueryResult<i32>, ReadQueryResult<i32>> =
             QueryResultTuple(
-                (ReadQueryResult::new(&[&[1, 2, 3, 4], &[5, 6, 7, 8], &[9, 10, 11, 12]]),
-                 ReadQueryResult::new(&[&[1, 2, 3, 4], &[5, 6, 7, 8], &[9, 10, 11, 12]]))
+                (ReadQueryResult::new(vec![&[1, 2, 3, 4], &[5, 6, 7, 8], &[9, 10, 11, 12]]),
+                 ReadQueryResult::new(vec![&[1, 2, 3, 4], &[5, 6, 7, 8], &[9, 10, 11, 12]]))
             );
 
         for (a, b) in result {
