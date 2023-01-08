@@ -1,3 +1,5 @@
+use std::any::TypeId;
+use std::collections::HashSet;
 use std::marker::PhantomData;
 use std::path::Iter;
 use crate::ecs::World;
@@ -9,6 +11,28 @@ use super::{component::Component, table::EntityTable};
 // TODO: take in 'world' from query. Come up with some solution that can filter the world for the
 // relevant tables for a given query and pass these onto the fetch and query methods. The query result
 // should also accept a nested array to account for the query across multiple tables
+
+// Design decision: should query be responsible for filtering out which tables in the world should
+// or should the tables be passed down to the query already filtered?
+// - The top level function in World takes a generic Query as a param. There can only be one implementation
+// for this for &T and &mut T, so you'd lose the ability to define different types of queries based on
+// the simple type definition. Favouring making table filtering the responsibility of the Query
+
+
+// Possible implementation
+// QueryExecutor contains a mutable data structure which can be manipulated by each Query implementation
+// for example an array of indexes which will be used to filter out the entity table list eventually
+// passed to the query.
+
+// This could be inefficient as each query param would have their member called, and possibly some data be stored
+// for later queries to observe and modify.
+// E.g. possible algo for Query<(&i32, &u8, Without<bool>)>.
+// there is list of usize in QueryExecutor.
+// For &i32 and &u8 each table is checked for having this data, and indexes are added to list
+// For without indexes are added to another list
+// The difference is what is used to generate the final table. Wouldn't be so bad if they were
+// hashmaps of each table
+
 
 // After this is implemented, there needs to be a way of iterating over the nested sequence as if
 // it were a homogenous sequence
@@ -56,7 +80,6 @@ struct ReadQueryResult<'a, T: Component> {
     index_inner: usize,
     index_outer: usize,
 }
-
 
 
 impl<'a, T: Component> QueryResult for ReadQueryResult<'a, T> {
@@ -132,24 +155,25 @@ pub trait Query
 
     type Fetch: Fetch;
 
-    fn get<'a>(fetch: &Self::Fetch, table: &'a Vec<EntityTable>) -> Self::Item<'a>;
+    fn get<'a>(fetch: &Self::Fetch, table: &'a EntityTable) -> Self::Item<'a>;
+    fn filter(query_filter: &mut QueryFilter);
 }
 
 pub trait Fetch {
     type Item<'a>;
 
-    fn fetch(table: &Vec<EntityTable>) -> Self::Item<'_>;
+    fn fetch(table: &EntityTable) -> Self::Item<'_>;
     fn new() -> Self;
 }
 
 pub struct FetchRead<T> (PhantomData<T>);
 
 impl<T: Component> Fetch for FetchRead<T> {
-    type Item<'a> = Vec<&'a [T]>;
+    type Item<'a> = &'a [T];
 
     /// Assumes tables have been checked for the existence of T before executing
-    fn fetch(table: &Vec<EntityTable>) -> Self::Item<'_> {
-        table.iter().map(|table| table.get::<T>()).collect()
+    fn fetch(table: &EntityTable) -> Self::Item<'_> {
+        table.get::<T>()
     }
 
     fn new() -> Self { Self { 0: Default::default() } }
@@ -162,7 +186,7 @@ impl<T: Component> Fetch for FetchRead<T> {
 impl<A: Fetch, B: Fetch> Fetch for (A, B) {
     type Item<'a> = (A::Item<'a>, B::Item<'a>);
 
-    fn fetch(table: &Vec<EntityTable>) -> Self::Item<'_> {
+    fn fetch(table: &EntityTable) -> Self::Item<'_> {
         (A::fetch(&table), B::fetch(&table))
     }
 
@@ -179,24 +203,65 @@ impl<A: Query, B: Query> Query for (A, B) {
 
     type Fetch = (A::Fetch, B::Fetch);
 
-    fn get<'a>(fetch: &Self::Fetch, table: &'a Vec<EntityTable>) -> Self::Item<'a> {
+    fn get<'a>(fetch: &Self::Fetch, table: &'a EntityTable) -> Self::Item<'a> {
         Self::Fetch::fetch(table)
+    }
+
+    fn filter(query_filter: &mut QueryFilter) {
+        A::filter(query_filter);
+        B::filter(query_filter);
     }
 }
 
 
 impl<'a, T: Component> Query for &'a T {
-    type Item<'b> = Vec<&'b [T]>;
+    type Item<'b> = &'b [T];
 
     type Fetch = FetchRead<T>;
 
-    fn get<'b>(fetch: &Self::Fetch, table: &'b Vec<EntityTable>) -> Self::Item<'b> {
+    fn get<'b>(fetch: &Self::Fetch, table: &'b EntityTable) -> Self::Item<'b> {
         Self::Fetch::fetch(table)
+    }
+
+    fn filter(query_filter: &mut QueryFilter) {
+        let ti = TypeInfo::of::<T>().id;
+        query_filter.included.insert(ti);
+    }
+}
+
+pub struct QueryFilter {
+    included: HashSet<TypeId>,
+    excluded: HashSet<TypeId>,
+}
+
+impl Default for QueryFilter {
+    fn default() -> Self {
+        Self {
+            included: Default::default(),
+            excluded: Default::default(),
+        }
+    }
+}
+
+impl QueryFilter {
+    fn new() -> Self {
+        Self {
+            included: Default::default(),
+            excluded: Default::default(),
+        }
+    }
+
+    fn signature(&self) -> HashSet<TypeId> {
+        self.included
+            .difference(&self.excluded)
+            .map(|t| *t)
+            .collect()
     }
 }
 
 pub struct QueryExecutor<'a, Q: Query> {
     world: &'a World,
+    filters: QueryFilter,
     _marker: PhantomData<Q>,
 }
 
@@ -204,6 +269,7 @@ impl<'a, Q: Query> QueryExecutor<'a, Q> {
     pub fn new(world: &'a World) -> Self {
         Self {
             world,
+            filters: Default::default(),
             _marker: PhantomData::default(),
         }
     }
@@ -211,10 +277,16 @@ impl<'a, Q: Query> QueryExecutor<'a, Q> {
     /// Provides Fetch and Query abstractions with required world data. The implementation
     /// of Query and Fetch depends on the type that's implemented Query (e.g. &T -> Borrow; &mut T -> mutable borrow)
     /// Hence, query can be made using the types passed to this generic function
-    pub fn execute(&self) -> <Q as Query>::Item<'_> {
+    pub fn execute(&mut self) -> Vec<<Q as Query>::Item<'_>> {
         let fetcher = Q::Fetch::new();
-        let result = Q::get(&fetcher, &self.world.entity_tables);
-        result
+
+        // modify query filters
+        Q::filter(&mut self.filters);
+        self.world.entity_tables
+            .iter()
+            .filter(|t| t.has_signature(&self.filters.signature()))
+            .map(|t| Q::get(&fetcher, t))
+            .collect()
     }
 }
 
@@ -230,25 +302,33 @@ impl<'q, Q: Query> Iterator for QueryExecutor<'q, Q> {
 pub fn test() {
     let init_entity = entity![1 + 1 as i32, (1 / 2) as f32];
     let type_infos: Vec<TypeInfo> = init_entity.iter().map(|c| (**c).type_info()).collect();
-    let mut table = EntityTable::new(type_infos);
-    (0..10000).for_each(|n| {
+    let mut table_one = EntityTable::new(type_infos);
+    (0..50).for_each(|n| {
         let mut entity = entity![n + 1 as i32, (n / 2) as f32];
-        table.add(entity);
+        table_one.add(entity);
     });
 
-    let tables = vec![table];
+    let init_entity = entity![1 + 1 as i32, 1  as u8];
+    let type_infos: Vec<TypeInfo> = init_entity.iter().map(|c| (**c).type_info()).collect();
+    let mut table_two = EntityTable::new(type_infos);
+    (0..50).for_each(|n| {
+        let mut entity = entity![n * 20 as i32, (1) as u8];
+        table_two.add(entity);
+    });
+
+
+    let tables = vec![table_one, table_two];
     let world = World::new_vec(tables);
 
-    let start: QueryExecutor<&i32> = QueryExecutor::new(&world);
+    let mut start: QueryExecutor<(&i32, &f32)> = QueryExecutor::new(&world);
 
+    let data = start.execute();
 
-    let data: ReadQueryResult<i32> = start.execute().into();
-
-    for d in data {
-        println!("{}", d)
+    for (a,b) in data {
+        for i in a {
+            println!("{}", i)
+        }
     }
-
-
 }
 
 
