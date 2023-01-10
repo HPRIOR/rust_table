@@ -49,7 +49,6 @@ use super::{component::Component, table::EntityTable};
 // can be used without attachment to query trait (interface seg principle?)
 
 
-
 // After this is implemented, there needs to be a way of iterating over the nested sequence as if
 // it were a homogenous sequence
 // This is difficult as the Iterator cannot be implemented on tuples - ideal I would just write
@@ -164,6 +163,7 @@ impl<A: QueryResult, B: QueryResult> Iterator for QueryResultTuple<A, B> {
     }
 }
 
+// -> Abstractions <- //
 
 pub trait Query
 {
@@ -173,7 +173,6 @@ pub trait Query
     type Fetch: Fetch;
 
     fn get<'a>(fetch: &Self::Fetch, table: &'a EntityTable) -> Self::Item<'a>;
-    fn filter(query_filter: &mut QueryFilter);
 }
 
 pub trait Fetch {
@@ -181,6 +180,10 @@ pub trait Fetch {
 
     fn fetch(table: &EntityTable) -> Self::Item<'_>;
     fn new() -> Self;
+}
+
+pub trait Filter {
+    fn filter(query_filter: &mut QueryFilter);
 }
 
 pub struct FetchRead<T> (PhantomData<T>);
@@ -223,7 +226,9 @@ impl<A: Query, B: Query> Query for (A, B) {
     fn get<'a>(fetch: &Self::Fetch, table: &'a EntityTable) -> Self::Item<'a> {
         Self::Fetch::fetch(table)
     }
+}
 
+impl<A: Filter, B: Filter> Filter for (A, B) {
     fn filter(query_filter: &mut QueryFilter) {
         A::filter(query_filter);
         B::filter(query_filter);
@@ -239,12 +244,23 @@ impl<'a, T: Component> Query for &'a T {
     fn get<'b>(fetch: &Self::Fetch, table: &'b EntityTable) -> Self::Item<'b> {
         Self::Fetch::fetch(table)
     }
+}
 
+impl<'a, T: Component> Filter for &'a T {
     fn filter(query_filter: &mut QueryFilter) {
         let ti = TypeInfo::of::<T>().id;
         query_filter.included.insert(ti);
     }
 }
+
+struct Without<T: Component>(PhantomData<T>);
+
+impl<T: Component> Filter for Without<T> {
+    fn filter(query_filter: &mut QueryFilter) {
+        todo!()
+    }
+}
+
 
 pub struct QueryFilter {
     included: HashSet<TypeId>,
@@ -279,31 +295,36 @@ impl QueryFilter {
 pub struct QueryExecutor<'a, Q: Query> {
     world: &'a World,
     filters: QueryFilter,
-    _marker: PhantomData<Q>,
+    result: Vec<Q::Item<'a>>,
 }
 
-impl<'a, Q: Query> QueryExecutor<'a, Q> {
+impl<'a, Q: Query + Filter> QueryExecutor<'a, Q> {
     pub fn new(world: &'a World) -> Self {
         Self {
             world,
             filters: Default::default(),
-            _marker: PhantomData::default(),
+            result: Default::default(),
         }
     }
 
-    /// Provides Fetch and Query abstractions with required world data. The implementation
-    /// of Query and Fetch depends on the type that's implemented Query (e.g. &T -> Borrow; &mut T -> mutable borrow)
-    /// Hence, query can be made using the types passed to this generic function
-    pub fn execute(&mut self) -> Vec<<Q as Query>::Item<'_>> {
-        let fetcher = Q::Fetch::new();
-
-        // modify query filters
+    pub fn get(&mut self) -> &mut Self {
         Q::filter(&mut self.filters);
-        self.world.entity_tables
+        self
+    }
+
+    pub fn with_filter<F: Filter>(&mut self) {
+        F::filter(&mut self.filters)
+    }
+
+    pub fn execute(&mut self) -> &mut Self {
+        let fetcher = Q::Fetch::new();
+        self.result = self.world.entity_tables
             .iter()
             .filter(|t| t.has_signature(&self.filters.signature()))
             .map(|t| Q::get(&fetcher, t))
-            .collect()
+            .collect();
+
+        self
     }
 }
 
@@ -341,7 +362,7 @@ pub fn test() {
 
     let data = start.execute();
 
-    for (a,b) in data {
+    for (a, b) in data {
         for i in a {
             println!("{}", i)
         }
