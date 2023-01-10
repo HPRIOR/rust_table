@@ -58,8 +58,8 @@ mod tests {
         println!("{:#?}", ref_info);
         println!("{:#?}", literal_info);
 
-        let query = ecs.query::<(&i32, &f32)>();
-        let result = query.execute();
+        let mut query = ecs.query::<(&i32, &f32)>();
+        let result = query.get().execute().data();
 
         // for element in result{
         //     println!("{:#?}", element);

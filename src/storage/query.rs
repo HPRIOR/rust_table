@@ -170,61 +170,24 @@ pub trait Query
     // same as self
     type Item<'a>;
 
-    type Fetch: Fetch;
-
-    fn get<'a>(fetch: &Self::Fetch, table: &'a EntityTable) -> Self::Item<'a>;
+    fn get(table: &EntityTable) -> Self::Item<'_>;
 }
 
-pub trait Fetch {
-    type Item<'a>;
-
-    fn fetch(table: &EntityTable) -> Self::Item<'_>;
-    fn new() -> Self;
-}
 
 pub trait Filter {
     fn filter(query_filter: &mut QueryFilter);
 }
 
-pub struct FetchRead<T> (PhantomData<T>);
-
-impl<T: Component> Fetch for FetchRead<T> {
-    type Item<'a> = &'a [T];
-
-    /// Assumes tables have been checked for the existence of T before executing
-    fn fetch(table: &EntityTable) -> Self::Item<'_> {
-        table.get::<T>()
-    }
-
-    fn new() -> Self { Self { 0: Default::default() } }
-}
-
-
-// Tuple implementation for Fetch - todo create macro
-// Recursive definition for tuples. Fetch is implemented on tuples of Fetch, calling the base on each
-// one to derive a tuple result.
-impl<A: Fetch, B: Fetch> Fetch for (A, B) {
-    type Item<'a> = (A::Item<'a>, B::Item<'a>);
-
-    fn fetch(table: &EntityTable) -> Self::Item<'_> {
-        (A::fetch(&table), B::fetch(&table))
-    }
-
-    fn new() -> Self {
-        (A::new(), B::new())
-    }
-}
 
 impl<A: Query, B: Query> Query for (A, B) {
     type Item<'a> = (
-        <<A as Query>::Fetch as Fetch>::Item<'a>,
-        <<B as Query>::Fetch as Fetch>::Item<'a>
+        A::Item<'a>,
+        B::Item<'a>
     );
 
-    type Fetch = (A::Fetch, B::Fetch);
 
-    fn get<'a>(fetch: &Self::Fetch, table: &'a EntityTable) -> Self::Item<'a> {
-        Self::Fetch::fetch(table)
+    fn get(table: &EntityTable) -> Self::Item<'_> {
+        (A::get(&table), B::get(&table))
     }
 }
 
@@ -239,10 +202,9 @@ impl<A: Filter, B: Filter> Filter for (A, B) {
 impl<'a, T: Component> Query for &'a T {
     type Item<'b> = &'b [T];
 
-    type Fetch = FetchRead<T>;
 
-    fn get<'b>(fetch: &Self::Fetch, table: &'b EntityTable) -> Self::Item<'b> {
-        Self::Fetch::fetch(table)
+    fn get(table: &EntityTable) -> Self::Item<'_> {
+        table.get::<T>()
     }
 }
 
@@ -317,14 +279,15 @@ impl<'a, Q: Query + Filter> QueryExecutor<'a, Q> {
     }
 
     pub fn execute(&mut self) -> &mut Self {
-        let fetcher = Q::Fetch::new();
         self.result = self.world.entity_tables
             .iter()
             .filter(|t| t.has_signature(&self.filters.signature()))
-            .map(|t| Q::get(&fetcher, t))
+            .map(|t| Q::get(t))
             .collect();
-
         self
+    }
+    pub fn data(&self) -> &Vec<Q::Item<'a>>{
+        &self.result
     }
 }
 
@@ -360,10 +323,10 @@ pub fn test() {
 
     let mut start: QueryExecutor<(&i32, &f32)> = QueryExecutor::new(&world);
 
-    let data = start.execute();
+    let data = start.get().execute().data();
 
     for (a, b) in data {
-        for i in a {
+        for i in *a {
             println!("{}", i)
         }
     }
