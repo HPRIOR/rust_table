@@ -2,7 +2,7 @@ use std::any::TypeId;
 use std::collections::HashSet;
 use std::fmt;
 use std::fmt::Formatter;
-use crate::storage::query::Query;
+use crate::storage::query::TQueryItem;
 use super::{
     column::Column,
     component::{Component, Type, TypeInfo},
@@ -38,7 +38,7 @@ impl EntityTable {
             .any(|ci| ci.id == TypeInfo::of::<T>().id)
     }
 
-    pub fn has_query<Q: Query>(&self) -> bool {
+    pub fn has_query<Q: TQueryItem>(&self) -> bool {
         // let query_typeinfo = TypeInfo::of::<Q>();
         todo!()
         // if self.column_info.iter().map(|ci| ci.type_name).

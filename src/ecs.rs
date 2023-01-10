@@ -1,6 +1,6 @@
 use crate::storage::{component::Component, table::EntityTable};
 use crate::storage::component::TypeInfo;
-use crate::storage::query::{Filter, Query, QueryExecutor};
+use crate::storage::query::{TFilter, TQueryItem, QueryExecutor};
 
 pub struct World {
     pub entity_tables: Vec<EntityTable>,
@@ -23,9 +23,7 @@ impl World {
     }
 
 
-    fn query<'a, Q: Query + Filter + 'a + 'static>(&'a self) -> QueryExecutor<Q> {
-        let type_info = TypeInfo::of::<Q>();
-        // println!("type of query {}", type_info.type_name);
+    fn query<'a, Q: TQueryItem + TFilter + 'a + 'static>(&'a self) -> QueryExecutor<Q> {
         QueryExecutor::new(self)
     }
 }
@@ -37,7 +35,7 @@ mod tests {
     use crate::storage::component::TypeInfo;
     use crate::storage::table::EntityTable;
     use crate::storage::component::Component;
-    use crate::storage::query::Query;
+    use crate::storage::query::TQueryItem;
 
     #[test]
     fn test() {

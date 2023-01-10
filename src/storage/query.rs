@@ -9,184 +9,53 @@ use crate::storage::component::TypeInfo;
 
 use super::{component::Component, table::EntityTable};
 
-// random notes:
-// TODO: take in 'world' from query. Come up with some solution that can filter the world for the
-// relevant tables for a given query and pass these onto the fetch and query methods. The query result
-// should also accept a nested array to account for the query across multiple tables
-
-// Design decision: should query be responsible for filtering out which tables in the world should
-// or should the tables be passed down to the query already filtered?
-// - The top level function in World takes a generic Query as a param. There can only be one implementation
-// for this for &T and &mut T, so you'd lose the ability to define different types of queries based on
-// the simple type definition. Favouring making table filtering the responsibility of the Query
-
-
-// Possible implementation
-// QueryExecutor contains a mutable data structure which can be manipulated by each Query implementation
-// for example an array of indexes which will be used to filter out the entity table list eventually
-// passed to the query.
-
-// This could be inefficient as each query param would have their member called, and possibly some data be stored
-// for later queries to observe and modify.
-// E.g. possible algo for Query<(&i32, &u8, Without<bool>)>.
-// there is list of usize in QueryExecutor.
-// For &i32 and &u8 each table is checked for having this data, and indexes are added to list
-// For without indexes are added to another list
-// The difference is what is used to generate the final table. Wouldn't be so bad if they were
-// hashmaps of each table
-
-// Query<(&i32, &u8, Without<bool>)> This interface is more complicated than it's worth. If Without
-// implements Query then it must return some value which will be added to the returned tuple. Instead,
-// stick with the current implementation and use a builder pattern to modify query before it's executed:
-// let query =
-//      QueryExecutor<(A, B)>::new()
-//          .get::<(A, B)>()        // registers call back for execute
-//          .except::<C>()
-//          .some_filter::<T>()
-//          .some_other_filter::<U>()
-//          .execute();
-
-// would still be worth splitting the Filter trait out from query so subsequent filter only methods
-// can be used without attachment to query trait (interface seg principle?)
-
-
-// After this is implemented, there needs to be a way of iterating over the nested sequence as if
-// it were a homogenous sequence
-// This is difficult as the Iterator cannot be implemented on tuples - ideal I would just write
-// an iterator for QueryResult, and then another iterator on successive generic tuple combinations
-// where T implements Query result. But this is not possible unless you wrap the tuple inside of a struct.
-// A new struct would need to be created for every combination of tuple, and an iterator implemented for that.
-
-// one route might be to implement iterator directly on the QueryExecutor,
-// or generate another Iterator implementation of the QueryExecutor results
-
-// After this mutable queries need to be made. Hopefully this will just be another impl if the traits
-// which are currently working for borrows.
-
-// Then different types of queries should be allowed.
-// E.g.
-// Get type with type but not y
-//  Get type with othertype
-// get type with othertype but not type
-
-
-// concurrency and efficiencies
-// concurrent iteration for borrows
-// fast table lookups for quires (hashing and signatures)
-
-// Entities
-// lookup and removal of entities
-// removing components from entities, reorganising tables as a result, dynamic graph implementation
-// to find relevant tables to move entities in and out of
-
-
-trait QueryResult {
-    type Item;
-    fn next_item(&mut self) -> Option<Self::Item>;
-}
-
-impl<'a, T: Component> From<Vec<&'a [T]>> for ReadQueryResult<'a, T> {
-    fn from(value: Vec<&'a [T]>) -> Self {
-        ReadQueryResult::new(value)
-    }
-}
-
-struct ReadQueryResult<'a, T: Component> {
-    results: Vec<&'a [T]>,
-    index_inner: usize,
-    index_outer: usize,
-}
-
-
-impl<'a, T: Component> QueryResult for ReadQueryResult<'a, T> {
-    type Item = &'a T;
-
-    fn next_item(&mut self) -> Option<Self::Item> {
-        if self.index_outer >= self.results.len() {
-            None
-        } else if self.index_inner >= self.results[self.index_outer].len() {
-            self.index_inner = 0;
-            self.index_outer += 1;
-            self.next_item()
-        } else {
-            let result = Some(&self.results[self.index_outer][self.index_inner]);
-            self.index_inner += 1;
-            result
-        }
-    }
-}
-
-impl<'a, T: Component> ReadQueryResult<'a, T> {
-    fn new(results: Vec<&'a [T]>) -> Self {
-        Self { results, index_inner: Default::default(), index_outer: Default::default() }
-    }
-}
-
-impl<'a, T: Component> Iterator for ReadQueryResult<'a, T> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next_item()
-    }
-}
-
-trait QueryIterator {
-    type Item;
-    fn next(&mut self) -> Option<Self::Item>;
-}
-
-
-impl<A: QueryResult, B: QueryResult> QueryIterator for (A, B) {
-    type Item = (A::Item, B::Item);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        Some((self.0.next_item()?, self.1.next_item()?))
-    }
-}
-
-
-// This is problematic. In order to define more tuples, more structs would need to
-// be defined on each tuple combination.
-struct QueryResultTuple<A: QueryResult, B: QueryResult>((A, B));
-
-impl<A: QueryResult, B: QueryResult> From<(A, B)> for QueryResultTuple<A, B> {
-    fn from(value: (A, B)) -> Self {
-        QueryResultTuple(value)
-    }
-}
-
-
-impl<A: QueryResult, B: QueryResult> Iterator for QueryResultTuple<A, B> {
-    type Item = (A::Item, B::Item);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        Some((self.0.0.next_item()?, self.0.1.next_item()?))
-    }
-}
-
 // -> Abstractions <- //
 
-pub trait Collection<'a> {
-    type Item<'b>;
-    fn get(&mut self, n: usize) -> Self::Item<'a>;
-    fn length(&self) -> usize;
-}
-
-pub trait Query
+pub trait TQueryItem
 {
-    type Collection<'a>: Collection<'a>;
+    type Collection<'a>: TCollection<'a>;
     type Item<'a>;
 
     fn get(table: &EntityTable) -> Self::Collection<'_>;
     fn get_at(collection: Self::Collection<'_>, n: usize) -> Self::Item<'_>;
 }
 
+pub trait TCollection<'a> {
+    type Item<'b>;
+    fn get(&mut self, n: usize) -> Self::Item<'a>;
+    fn length(&self) -> usize;
+}
 
-pub trait Filter {
+pub trait TFilter {
     fn filter(query_filter: &mut QueryFilter);
 }
 
-impl<'a, T: Component> Collection<'a> for &'a [T] {
+
+// -> Base Implementations <- //
+
+impl<'a, T: Component> TQueryItem for &'a T {
+    type Collection<'b> = &'b [T];
+    type Item<'b> = &'b T;
+
+
+    fn get(table: &EntityTable) -> Self::Collection<'_> {
+        table.get::<T>()
+    }
+
+    fn get_at(collection: Self::Collection<'_>, n: usize) -> Self::Item<'_> {
+        &collection[n]
+    }
+}
+
+
+impl<'a, T: Component> TFilter for &'a T {
+    fn filter(query_filter: &mut QueryFilter) {
+        let ti = TypeInfo::of::<T>().id;
+        query_filter.included.insert(ti);
+    }
+}
+
+impl<'a, T: Component> TCollection<'a> for &'a [T] {
     type Item<'b> = &'b T;
 
     fn get<'b>(&mut self, n: usize) -> Self::Item<'a> {
@@ -199,19 +68,10 @@ impl<'a, T: Component> Collection<'a> for &'a [T] {
 }
 
 
-impl<'a, A: Collection<'a>, B: Collection<'a>> Collection<'a> for (A, B) {
-    type Item<'b> = (A::Item<'b>, B::Item<'b>);
+// -> Recursive tuple definitions <- //
+// todo: make macro for all tuples
 
-    fn get<'b>(&mut self, n: usize) -> Self::Item<'a> {
-        (A::get(&mut self.0, n), B::get(&mut self.1, n))
-    }
-
-    fn length(&self) -> usize {
-        self.0.length()
-    }
-}
-
-impl<A: Query, B: Query> Query for (A, B) {
+impl<A: TQueryItem, B: TQueryItem> TQueryItem for (A, B) {
     type Collection<'a> = (
         A::Collection<'a>,
         B::Collection<'a>
@@ -227,8 +87,20 @@ impl<A: Query, B: Query> Query for (A, B) {
     }
 }
 
+impl<'a, A: TCollection<'a>, B: TCollection<'a>> TCollection<'a> for (A, B) {
+    type Item<'b> = (A::Item<'b>, B::Item<'b>);
 
-impl<A: Filter, B: Filter> Filter for (A, B) {
+    fn get<'b>(&mut self, n: usize) -> Self::Item<'a> {
+        (A::get(&mut self.0, n), B::get(&mut self.1, n))
+    }
+
+    fn length(&self) -> usize {
+        self.0.length()
+    }
+}
+
+
+impl<A: TFilter, B: TFilter> TFilter for (A, B) {
     fn filter(query_filter: &mut QueryFilter) {
         A::filter(query_filter);
         B::filter(query_filter);
@@ -236,35 +108,16 @@ impl<A: Filter, B: Filter> Filter for (A, B) {
 }
 
 
-impl<'a, T: Component> Query for &'a T {
-    type Collection<'b> = &'b [T];
-    type Item<'b> = &'b T;
-
-
-    fn get(table: &EntityTable) -> Self::Collection<'_> {
-        table.get::<T>()
-    }
-
-    fn get_at(collection: Self::Collection<'_>, n: usize) -> Self::Item<'_> {
-        &collection[n]
-    }
-}
-
-impl<'a, T: Component> Filter for &'a T {
-    fn filter(query_filter: &mut QueryFilter) {
-        let ti = TypeInfo::of::<T>().id;
-        query_filter.included.insert(ti);
-    }
-}
 
 struct Without<T: Component>(PhantomData<T>);
 
-impl<T: Component> Filter for Without<T> {
+impl<T: Component> TFilter for Without<T> {
     fn filter(query_filter: &mut QueryFilter) {
         todo!()
     }
 }
 
+// -> API <- //
 
 pub struct QueryFilter {
     included: HashSet<TypeId>,
@@ -296,7 +149,7 @@ impl QueryFilter {
     }
 }
 
-pub struct QueryExecutor<'a, Q: Query> {
+pub struct QueryExecutor<'a, Q: TQueryItem> {
     world: &'a World,
     filters: QueryFilter,
     result: Vec<Q::Collection<'a>>,
@@ -304,7 +157,7 @@ pub struct QueryExecutor<'a, Q: Query> {
     outer_index: usize,
 }
 
-impl<'a, Q: Query + Filter> QueryExecutor<'a, Q> {
+impl<'a, Q: TQueryItem + TFilter> QueryExecutor<'a, Q> {
     pub fn new(world: &'a World) -> Self {
         Self {
             world,
@@ -320,7 +173,7 @@ impl<'a, Q: Query + Filter> QueryExecutor<'a, Q> {
         self
     }
 
-    pub fn with_filter<F: Filter>(&mut self) {
+    pub fn with_filter<F: TFilter>(&mut self) {
         F::filter(&mut self.filters)
     }
 
@@ -337,8 +190,8 @@ impl<'a, Q: Query + Filter> QueryExecutor<'a, Q> {
     }
 }
 
-impl<'q, Q: Query> Iterator for QueryExecutor<'q, Q> {
-    type Item = <<Q as Query>::Collection<'q> as Collection<'q>>::Item<'q>;
+impl<'q, Q: TQueryItem> Iterator for QueryExecutor<'q, Q> {
+    type Item = <<Q as TQueryItem>::Collection<'q> as TCollection<'q>>::Item<'q>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.outer_index >= self.result.len() {
@@ -357,19 +210,19 @@ impl<'q, Q: Query> Iterator for QueryExecutor<'q, Q> {
 
 
 pub fn test() {
-    let init_entity = entity![1 + 1 as i32, (1 / 2) as f32];
+    let init_entity = entity![1  as i32, (1.0 / 2.0) as f32];
     let type_infos: Vec<TypeInfo> = init_entity.iter().map(|c| (**c).type_info()).collect();
     let mut table_one = EntityTable::new(type_infos);
     (0..50).for_each(|n| {
-        let mut entity = entity![n + 1 as i32, (n / 2) as f32];
+        let mut entity = entity![1 as i32, (n as f32 / 2.0) as f32];
         table_one.add(entity);
     });
 
-    let init_entity = entity![1 + 1 as i32, 1  as u8];
+    let init_entity = entity![2 as i32, 1  as u8];
     let type_infos: Vec<TypeInfo> = init_entity.iter().map(|c| (**c).type_info()).collect();
     let mut table_two = EntityTable::new(type_infos);
     (0..50).for_each(|n| {
-        let mut entity = entity![n * 20 as i32, (1) as u8];
+        let mut entity = entity![2 as i32, (1) as u8];
         table_two.add(entity);
     });
 
@@ -377,38 +230,13 @@ pub fn test() {
     let tables = vec![table_one, table_two];
     let world = World::new_vec(tables);
 
-    let mut start: QueryExecutor<&i32> = QueryExecutor::new(&world);
+    let mut start: QueryExecutor<(&i32, &u8)> = QueryExecutor::new(&world);
 
     let data = start.get().execute();
 
-    for a in data {
-        println!("{}", a);
+    for (a, b) in data {
+        println!("{}, {}", a, b);
     }
 }
 
 
-#[cfg(test)]
-mod tests {
-    use crate::storage::query::{QueryResult, QueryResultTuple, ReadQueryResult};
-
-    #[test]
-    fn query_result_can_iter_over_nested() {
-        let result: Vec<&[i32]> = vec![&[1, 2, 3, 4], &[5, 6, 7, 8], &[9, 10, 11, 12]];
-        let expected = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-        let mut query_result = ReadQueryResult::new(result);
-        query_result.into_iter().zip(expected).for_each(|(a, b)| assert_eq!(a, b));
-    }
-
-    #[test]
-    fn query_result_can_iter_over_nested_tuple() {
-        let result: QueryResultTuple<ReadQueryResult<i32>, ReadQueryResult<i32>> =
-            QueryResultTuple(
-                (ReadQueryResult::new(vec![&[1, 2, 3, 4], &[5, 6, 7, 8], &[9, 10, 11, 12]]),
-                 ReadQueryResult::new(vec![&[1, 2, 3, 4], &[5, 6, 7, 8], &[9, 10, 11, 12]]))
-            );
-
-        for (a, b) in result {
-            println!("{}, {}", a, b)
-        }
-    }
-}
