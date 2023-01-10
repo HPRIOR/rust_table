@@ -44,6 +44,7 @@ impl EntityTable {
         // if self.column_info.iter().map(|ci| ci.type_name).
     }
 
+    /// Returns true if table contains all of the input types
     pub fn has_signature(&self, type_ids: &HashSet<TypeId>) -> bool {
         type_ids.intersection(&self.column_id_set).count() == type_ids.len()
     }

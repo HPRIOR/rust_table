@@ -1,6 +1,7 @@
 use std::any::TypeId;
 use std::collections::HashSet;
 use std::marker::PhantomData;
+use std::ops::Deref;
 use std::path::Iter;
 use crate::ecs::World;
 use crate::entity;
@@ -165,12 +166,19 @@ impl<A: QueryResult, B: QueryResult> Iterator for QueryResultTuple<A, B> {
 
 // -> Abstractions <- //
 
+pub trait Collection<'a> {
+    type Item<'b>;
+    fn get(&mut self, n: usize) -> Self::Item<'a>;
+    fn length(&self) -> usize;
+}
+
 pub trait Query
 {
-    // same as self
+    type Collection<'a>: Collection<'a>;
     type Item<'a>;
 
-    fn get(table: &EntityTable) -> Self::Item<'_>;
+    fn get(table: &EntityTable) -> Self::Collection<'_>;
+    fn get_at(collection: Self::Collection<'_>, n: usize) -> Self::Item<'_>;
 }
 
 
@@ -178,18 +186,47 @@ pub trait Filter {
     fn filter(query_filter: &mut QueryFilter);
 }
 
+impl<'a, T: Component> Collection<'a> for &'a [T] {
+    type Item<'b> = &'b T;
 
-impl<A: Query, B: Query> Query for (A, B) {
-    type Item<'a> = (
-        A::Item<'a>,
-        B::Item<'a>
-    );
+    fn get<'b>(&mut self, n: usize) -> Self::Item<'a> {
+        &self[n]
+    }
 
-
-    fn get(table: &EntityTable) -> Self::Item<'_> {
-        (A::get(&table), B::get(&table))
+    fn length(&self) -> usize {
+        self.len()
     }
 }
+
+
+impl<'a, A: Collection<'a>, B: Collection<'a>> Collection<'a> for (A, B) {
+    type Item<'b> = (A::Item<'b>, B::Item<'b>);
+
+    fn get<'b>(&mut self, n: usize) -> Self::Item<'a> {
+        (A::get(&mut self.0, n), B::get(&mut self.1, n))
+    }
+
+    fn length(&self) -> usize {
+        self.0.length()
+    }
+}
+
+impl<A: Query, B: Query> Query for (A, B) {
+    type Collection<'a> = (
+        A::Collection<'a>,
+        B::Collection<'a>
+    );
+    type Item<'a> = (A::Item<'a>, B::Item<'a>);
+
+    fn get(table: &EntityTable) -> Self::Collection<'_> {
+        (A::get(&table), B::get(&table))
+    }
+
+    fn get_at(collection: Self::Collection<'_>, n: usize) -> Self::Item<'_> {
+        (A::get_at(collection.0, n), B::get_at(collection.1, n))
+    }
+}
+
 
 impl<A: Filter, B: Filter> Filter for (A, B) {
     fn filter(query_filter: &mut QueryFilter) {
@@ -200,11 +237,16 @@ impl<A: Filter, B: Filter> Filter for (A, B) {
 
 
 impl<'a, T: Component> Query for &'a T {
-    type Item<'b> = &'b [T];
+    type Collection<'b> = &'b [T];
+    type Item<'b> = &'b T;
 
 
-    fn get(table: &EntityTable) -> Self::Item<'_> {
+    fn get(table: &EntityTable) -> Self::Collection<'_> {
         table.get::<T>()
+    }
+
+    fn get_at(collection: Self::Collection<'_>, n: usize) -> Self::Item<'_> {
+        &collection[n]
     }
 }
 
@@ -257,7 +299,9 @@ impl QueryFilter {
 pub struct QueryExecutor<'a, Q: Query> {
     world: &'a World,
     filters: QueryFilter,
-    result: Vec<Q::Item<'a>>,
+    result: Vec<Q::Collection<'a>>,
+    inner_index: usize,
+    outer_index: usize,
 }
 
 impl<'a, Q: Query + Filter> QueryExecutor<'a, Q> {
@@ -266,6 +310,8 @@ impl<'a, Q: Query + Filter> QueryExecutor<'a, Q> {
             world,
             filters: Default::default(),
             result: Default::default(),
+            inner_index: 0,
+            outer_index: 0,
         }
     }
 
@@ -286,16 +332,26 @@ impl<'a, Q: Query + Filter> QueryExecutor<'a, Q> {
             .collect();
         self
     }
-    pub fn data(&self) -> &Vec<Q::Item<'a>>{
+    pub fn data(&self) -> &Vec<Q::Collection<'a>> {
         &self.result
     }
 }
 
 impl<'q, Q: Query> Iterator for QueryExecutor<'q, Q> {
-    type Item = Q::Item<'q>;
+    type Item = <<Q as Query>::Collection<'q> as Collection<'q>>::Item<'q>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
+        if self.outer_index >= self.result.len() {
+            None
+        } else if self.inner_index >= self.result[self.outer_index].length() {
+            self.outer_index += 1;
+            self.inner_index = 0;
+            self.next()
+        } else {
+            let result = self.result[self.outer_index].get(self.inner_index);
+            self.inner_index += 1;
+            Some(result)
+        }
     }
 }
 
@@ -321,14 +377,12 @@ pub fn test() {
     let tables = vec![table_one, table_two];
     let world = World::new_vec(tables);
 
-    let mut start: QueryExecutor<(&i32, &f32)> = QueryExecutor::new(&world);
+    let mut start: QueryExecutor<&i32> = QueryExecutor::new(&world);
 
-    let data = start.get().execute().data();
+    let data = start.get().execute();
 
-    for (a, b) in data {
-        for i in *a {
-            println!("{}", i)
-        }
+    for a in data {
+        println!("{}", a);
     }
 }
 
