@@ -4,19 +4,10 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use std::path::Iter;
 use crate::ecs::World;
-use crate::entity;
-use crate::storage::component::TypeInfo;
+use crate::{entity, query};
+use crate::storage::component::{Type, TypeInfo};
 
 use super::{component::Component, table::EntityTable};
-
-// Current problem:
-// Need to TQueryItem for &mut T.
-// In order to get items from the table with T, the get() requires a reference to the EntityTable
-// To call get_mut on this table requires a mutable reference to EntityTable.
-// In order to implement this for Tuples, multiple mutable references to table are required
-// which is prohibited by safe rust. We know that tuples must be of different types, so any calls
-// to table.get_mut will not be accessing the same data;
-
 
 // -> Abstractions <- //
 
@@ -36,8 +27,12 @@ pub trait TCollection {
     fn length(&self) -> usize;
 }
 
-pub trait TFilter {
-    fn filter(query_filter: &mut QueryFilter);
+pub trait TInclude {
+    fn apply_filter(query_filter: &mut QueryFilter);
+}
+
+pub trait TExclude {
+    fn apply_filter(query_filter: &mut QueryFilter);
 }
 
 
@@ -76,17 +71,31 @@ impl<'a, T: Component> TQueryItem for &'a mut T {
 }
 
 
-impl<'a, T: Component> TFilter for &'a T {
-    fn filter(query_filter: &mut QueryFilter) {
+impl<'a, T: Component> TInclude for &'a T {
+    fn apply_filter(query_filter: &mut QueryFilter) {
         let ti = TypeInfo::of::<T>().id;
         query_filter.included.insert(ti);
     }
 }
 
-impl<'a, T: Component> TFilter for &'a mut T {
-    fn filter(query_filter: &mut QueryFilter) {
+impl<'a, T: Component> TInclude for &'a mut T {
+    fn apply_filter(query_filter: &mut QueryFilter) {
         let ti = TypeInfo::of::<T>().id;
         query_filter.included.insert(ti);
+    }
+}
+
+impl<'a, T: Component> TExclude for &'a T {
+    fn apply_filter(query_filter: &mut QueryFilter) {
+        let ti = TypeInfo::of::<T>().id;
+        query_filter.excluded.insert(ti);
+    }
+}
+
+impl<'a, T: Component> TExclude for &'a mut T {
+    fn apply_filter(query_filter: &mut QueryFilter) {
+        let ti = TypeInfo::of::<T>().id;
+        query_filter.excluded.insert(ti);
     }
 }
 
@@ -120,9 +129,7 @@ impl<'a, T: Component> TCollection for &'a mut [T] {
 }
 
 
-// -> Recursive tuple definitions <- //
-// todo: make macro for all tuples
-//
+// -> Recursive tuple definitions <- // todo: macros
 impl<'a, A: TQueryItem, B: TQueryItem> TQueryItem for (A, B) {
     type Collection = (
         A::Collection,
@@ -151,25 +158,15 @@ impl<'a, A: TCollection, B: TCollection> TCollection for (A, B) {
     }
 }
 
-
-impl<A: TFilter, B: TFilter> TFilter for (A, B) {
-    fn filter(query_filter: &mut QueryFilter) {
-        A::filter(query_filter);
-        B::filter(query_filter);
+impl<A: TInclude, B: TInclude> TInclude for (A, B) {
+    fn apply_filter(query_filter: &mut QueryFilter) {
+        A::apply_filter(query_filter);
+        B::apply_filter(query_filter);
     }
 }
 
-
-struct Without<T: Component>(PhantomData<T>);
-
-impl<T: Component> TFilter for Without<T> {
-    fn filter(query_filter: &mut QueryFilter) {
-        todo!()
-    }
-}
 
 // -> API <- //
-
 pub struct QueryFilter {
     included: HashSet<TypeId>,
     excluded: HashSet<TypeId>,
@@ -200,41 +197,47 @@ impl QueryFilter {
     }
 }
 
-pub struct QueryExecutor<'a, Q: TQueryItem> {
-    world: &'a mut World,
+pub struct Query<'world, Q: TQueryItem> {
+    world: &'world mut World,
     filters: QueryFilter,
     result: Vec<Q::Collection>,
     inner_index: usize,
     outer_index: usize,
 }
 
-impl<'a, Q: TQueryItem + TFilter> QueryExecutor<'a, Q> {
-    pub fn new(world: &'a mut World) -> Self {
+impl<'world, Q: TQueryItem + TInclude> Query<'world, Q> {
+    pub fn new(world: &'world mut World) -> Self {
+        // apply initial 'With' filter to include queried items
+        let mut filters: QueryFilter = Default::default();
+        Q::apply_filter(&mut filters);
+
         Self {
             world,
-            filters: Default::default(),
+            filters,
             result: Default::default(),
             inner_index: 0,
             outer_index: 0,
         }
     }
 
-    pub fn get(&mut self) -> &mut Self {
-        Q::filter(&mut self.filters);
+    pub fn without<F: TExclude>(&mut self) -> &mut Self {
+        F::apply_filter(&mut self.filters);
         self
-    }
-
-    pub fn with_filter<F: TFilter>(&mut self) {
-        F::filter(&mut self.filters)
     }
 
     pub fn execute(&mut self) -> &mut Self {
         unsafe {
-            self.result = self.world.entity_tables
-                .iter_mut()
-                .filter(|t| t.has_signature(&self.filters.signature()))
-                .map(|t| Q::get(t))
-                .collect();
+            self.result =
+                self
+                    .world
+                    .entity_tables
+                    .iter_mut()
+                    .filter(|t| {
+                        let signature = &self.filters.signature();
+                        t.has_signature(signature)
+                    })
+                    .map(|t| Q::get(t))
+                    .collect();
         }
         self
     }
@@ -243,7 +246,7 @@ impl<'a, Q: TQueryItem + TFilter> QueryExecutor<'a, Q> {
     }
 }
 
-impl<'q, Q: TQueryItem> Iterator for QueryExecutor<'q, Q> {
+impl<'q, Q: TQueryItem> Iterator for Query<'q, Q> {
     type Item = <<Q as TQueryItem>::Collection as TCollection>::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -267,7 +270,7 @@ pub fn test() {
     let type_infos: Vec<TypeInfo> = init_entity.iter().map(|c| (**c).type_info()).collect();
     let mut table_one = EntityTable::new(type_infos);
     (0..50).for_each(|n| {
-        let mut entity = entity![1 as i32, (n as f32 / 2.0) as f32];
+        let mut entity = entity![n as i32, (n as f32 / 2.0) as f32];
         table_one.add(entity);
     });
 
@@ -275,7 +278,7 @@ pub fn test() {
     let type_infos: Vec<TypeInfo> = init_entity.iter().map(|c| (**c).type_info()).collect();
     let mut table_two = EntityTable::new(type_infos);
     (0..50).for_each(|n| {
-        let mut entity = entity![2 as i32, (1) as u8];
+        let mut entity = entity![n as i32, (1) as u8];
         table_two.add(entity);
     });
 
@@ -283,13 +286,12 @@ pub fn test() {
     let tables = vec![table_one, table_two];
     let mut world = World::new_vec(tables);
 
-    let mut start: QueryExecutor<(&mut i32, &u8)> = QueryExecutor::new(&mut world);
+    let mut query: Query<&i32> = Query::new(&mut world);
 
-    let data = start.get().execute();
+    query.without::<&u8>().execute();
 
-    for (a, b) in data {
-        *a = (*b as i32);
-        println!("{}, {}", a, b);
+    for a in query {
+        println!("{}", a);
     }
 }
 

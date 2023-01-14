@@ -1,6 +1,6 @@
 use crate::storage::{component::Component, table::EntityTable};
 use crate::storage::component::TypeInfo;
-use crate::storage::query::{TFilter, TQueryItem, QueryExecutor};
+use crate::storage::query::{TInclude, TQueryItem, Query};
 
 pub struct World {
     pub entity_tables: Vec<EntityTable>,
@@ -23,8 +23,8 @@ impl World {
     }
 
 
-    fn query<'a, Q: TQueryItem + TFilter + 'a + 'static>(&'a mut self) -> QueryExecutor<Q> {
-        QueryExecutor::new(self)
+    fn query<'a, Q: TQueryItem + TInclude + 'a + 'static>(&'a mut self) -> Query<Q> {
+        Query::new(self)
     }
 }
 
