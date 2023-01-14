@@ -20,7 +20,7 @@ use super::{component::Component, table::EntityTable};
 
 // -> Abstractions <- //
 
-pub trait TQueryItem<'a>
+pub trait TQueryItem
 {
     type Collection: TCollection;
     type Item;
@@ -31,7 +31,8 @@ pub trait TQueryItem<'a>
 
 pub trait TCollection {
     type Item;
-    fn get(&mut self, n: usize) -> Self::Item; // Item must live as long as the
+    fn get(&mut self, n: usize) -> Self::Item;
+    // Item must live as long as the
     fn length(&self) -> usize;
 }
 
@@ -42,19 +43,35 @@ pub trait TFilter {
 
 // -> Base Implementations <- //
 
-impl<'a, T: Component> TQueryItem<'a> for &'a T {
+impl<'a, T: Component> TQueryItem for &'a T {
     type Collection = &'a [T];
     type Item = &'a T;
 
 
     fn get(table: *mut EntityTable) -> Self::Collection {
-        unsafe{
+        unsafe {
             (*table).get::<T>()
         }
     }
 
-    fn get_at(collection: Self::Collection, n: usize) -> Self::Item{
+    fn get_at(collection: Self::Collection, n: usize) -> Self::Item {
         &collection[n]
+    }
+}
+
+impl<'a, T: Component> TQueryItem for &'a mut T {
+    type Collection = &'a mut [T];
+    type Item = &'a mut T;
+
+
+    fn get(table: *mut EntityTable) -> Self::Collection {
+        unsafe {
+            (*table).get_mut::<T>()
+        }
+    }
+
+    fn get_at(collection: Self::Collection, n: usize) -> Self::Item {
+        &mut collection[n]
     }
 }
 
@@ -66,11 +83,35 @@ impl<'a, T: Component> TFilter for &'a T {
     }
 }
 
+impl<'a, T: Component> TFilter for &'a mut T {
+    fn filter(query_filter: &mut QueryFilter) {
+        let ti = TypeInfo::of::<T>().id;
+        query_filter.included.insert(ti);
+    }
+}
+
 impl<'a, T: Component> TCollection for &'a [T] {
     type Item = &'a T;
 
-    fn get<'b>(&mut self, n: usize) -> Self::Item {
+    fn get(&mut self, n: usize) -> Self::Item {
         &self[n]
+    }
+
+    fn length(&self) -> usize {
+        self.len()
+    }
+}
+
+impl<'a, T: Component> TCollection for &'a mut [T] {
+    type Item = &'a mut T;
+
+    fn get(&mut self, n: usize) -> Self::Item {
+        let ptr = self.as_mut_ptr();
+        unsafe {
+            let value =
+                ptr.add(n).as_mut().unwrap();
+            value
+        }
     }
 
     fn length(&self) -> usize {
@@ -81,8 +122,8 @@ impl<'a, T: Component> TCollection for &'a [T] {
 
 // -> Recursive tuple definitions <- //
 // todo: make macro for all tuples
-
-impl<'a, A: TQueryItem<'a>, B: TQueryItem<'a>> TQueryItem<'a> for (A, B) {
+//
+impl<'a, A: TQueryItem, B: TQueryItem> TQueryItem for (A, B) {
     type Collection = (
         A::Collection,
         B::Collection
@@ -101,7 +142,7 @@ impl<'a, A: TQueryItem<'a>, B: TQueryItem<'a>> TQueryItem<'a> for (A, B) {
 impl<'a, A: TCollection, B: TCollection> TCollection for (A, B) {
     type Item = (A::Item, B::Item);
 
-    fn get<'b>(&mut self, n: usize) -> Self::Item {
+    fn get(&mut self, n: usize) -> Self::Item {
         (A::get(&mut self.0, n), B::get(&mut self.1, n))
     }
 
@@ -159,7 +200,7 @@ impl QueryFilter {
     }
 }
 
-pub struct QueryExecutor<'a, Q: TQueryItem<'a>> {
+pub struct QueryExecutor<'a, Q: TQueryItem> {
     world: &'a mut World,
     filters: QueryFilter,
     result: Vec<Q::Collection>,
@@ -167,7 +208,7 @@ pub struct QueryExecutor<'a, Q: TQueryItem<'a>> {
     outer_index: usize,
 }
 
-impl<'a, Q: TQueryItem<'a> + TFilter> QueryExecutor<'a, Q> {
+impl<'a, Q: TQueryItem + TFilter> QueryExecutor<'a, Q> {
     pub fn new(world: &'a mut World) -> Self {
         Self {
             world,
@@ -188,7 +229,7 @@ impl<'a, Q: TQueryItem<'a> + TFilter> QueryExecutor<'a, Q> {
     }
 
     pub fn execute(&mut self) -> &mut Self {
-        unsafe{
+        unsafe {
             self.result = self.world.entity_tables
                 .iter_mut()
                 .filter(|t| t.has_signature(&self.filters.signature()))
@@ -202,8 +243,8 @@ impl<'a, Q: TQueryItem<'a> + TFilter> QueryExecutor<'a, Q> {
     }
 }
 
-impl<'q, Q: TQueryItem<'q>> Iterator for QueryExecutor<'q, Q> {
-    type Item = <<Q as TQueryItem<'q>>::Collection as TCollection>::Item;
+impl<'q, Q: TQueryItem> Iterator for QueryExecutor<'q, Q> {
+    type Item = <<Q as TQueryItem>::Collection as TCollection>::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.outer_index >= self.result.len() {
@@ -242,11 +283,12 @@ pub fn test() {
     let tables = vec![table_one, table_two];
     let mut world = World::new_vec(tables);
 
-    let mut start: QueryExecutor<(&i32, &u8)> = QueryExecutor::new(&mut world);
+    let mut start: QueryExecutor<(&mut i32, &u8)> = QueryExecutor::new(&mut world);
 
     let data = start.get().execute();
 
     for (a, b) in data {
+        *a = (*b as i32);
         println!("{}, {}", a, b);
     }
 }

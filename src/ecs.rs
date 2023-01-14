@@ -23,7 +23,7 @@ impl World {
     }
 
 
-    fn query<'a, Q: TQueryItem<'a> + TFilter + 'a + 'static>(&'a mut self) -> QueryExecutor<Q> {
+    fn query<'a, Q: TQueryItem + TFilter + 'a + 'static>(&'a mut self) -> QueryExecutor<Q> {
         QueryExecutor::new(self)
     }
 }
@@ -48,7 +48,7 @@ mod tests {
         });
 
         let tables = vec![table];
-        let ecs = World::new_vec(tables);
+        let mut ecs = World::new_vec(tables);
 
         let ref_info = TypeInfo::of::<&i32>();
         let literal_info = TypeInfo::of::<i32>();
