@@ -9,6 +9,15 @@ use crate::storage::component::TypeInfo;
 
 use super::{component::Component, table::EntityTable};
 
+// Current problem:
+// Need to TQueryItem for &mut T.
+// In order to get items from the table with T, the get() requires a reference to the EntityTable
+// To call get_mut on this table requires a mutable reference to EntityTable.
+// In order to implement this for Tuples, multiple mutable references to table are required
+// which is prohibited by safe rust. We know that tuples must be of different types, so any calls
+// to table.get_mut will not be accessing the same data;
+
+
 // -> Abstractions <- //
 
 pub trait TQueryItem
@@ -21,8 +30,8 @@ pub trait TQueryItem
 }
 
 pub trait TCollection<'a> {
-    type Item<'b>;
-    fn get(&mut self, n: usize) -> Self::Item<'a>;
+    type Item;
+    fn get(&mut self, n: usize) -> Self::Item; // Item must live as long as the
     fn length(&self) -> usize;
 }
 
@@ -56,9 +65,9 @@ impl<'a, T: Component> TFilter for &'a T {
 }
 
 impl<'a, T: Component> TCollection<'a> for &'a [T] {
-    type Item<'b> = &'b T;
+    type Item = &'a T;
 
-    fn get<'b>(&mut self, n: usize) -> Self::Item<'a> {
+    fn get<'b>(&mut self, n: usize) -> Self::Item {
         &self[n]
     }
 
@@ -88,9 +97,9 @@ impl<A: TQueryItem, B: TQueryItem> TQueryItem for (A, B) {
 }
 
 impl<'a, A: TCollection<'a>, B: TCollection<'a>> TCollection<'a> for (A, B) {
-    type Item<'b> = (A::Item<'b>, B::Item<'b>);
+    type Item = (A::Item, B::Item);
 
-    fn get<'b>(&mut self, n: usize) -> Self::Item<'a> {
+    fn get<'b>(&mut self, n: usize) -> Self::Item {
         (A::get(&mut self.0, n), B::get(&mut self.1, n))
     }
 
@@ -106,7 +115,6 @@ impl<A: TFilter, B: TFilter> TFilter for (A, B) {
         B::filter(query_filter);
     }
 }
-
 
 
 struct Without<T: Component>(PhantomData<T>);
@@ -191,7 +199,7 @@ impl<'a, Q: TQueryItem + TFilter> QueryExecutor<'a, Q> {
 }
 
 impl<'q, Q: TQueryItem> Iterator for QueryExecutor<'q, Q> {
-    type Item = <<Q as TQueryItem>::Collection<'q> as TCollection<'q>>::Item<'q>;
+    type Item = <<Q as TQueryItem>::Collection<'q> as TCollection<'q>>::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.outer_index >= self.result.len() {
