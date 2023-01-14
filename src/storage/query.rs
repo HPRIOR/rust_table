@@ -22,14 +22,14 @@ use super::{component::Component, table::EntityTable};
 
 pub trait TQueryItem
 {
-    type Collection<'a>: TCollection<'a>;
+    type Collection<'a>: TCollection;
     type Item<'a>;
 
     fn get(table: &EntityTable) -> Self::Collection<'_>;
     fn get_at(collection: Self::Collection<'_>, n: usize) -> Self::Item<'_>;
 }
 
-pub trait TCollection<'a> {
+pub trait TCollection {
     type Item;
     fn get(&mut self, n: usize) -> Self::Item; // Item must live as long as the
     fn length(&self) -> usize;
@@ -64,7 +64,7 @@ impl<'a, T: Component> TFilter for &'a T {
     }
 }
 
-impl<'a, T: Component> TCollection<'a> for &'a [T] {
+impl<'a, T: Component> TCollection for &'a [T] {
     type Item = &'a T;
 
     fn get<'b>(&mut self, n: usize) -> Self::Item {
@@ -96,7 +96,7 @@ impl<A: TQueryItem, B: TQueryItem> TQueryItem for (A, B) {
     }
 }
 
-impl<'a, A: TCollection<'a>, B: TCollection<'a>> TCollection<'a> for (A, B) {
+impl<'a, A: TCollection, B: TCollection> TCollection for (A, B) {
     type Item = (A::Item, B::Item);
 
     fn get<'b>(&mut self, n: usize) -> Self::Item {
@@ -199,7 +199,7 @@ impl<'a, Q: TQueryItem + TFilter> QueryExecutor<'a, Q> {
 }
 
 impl<'q, Q: TQueryItem> Iterator for QueryExecutor<'q, Q> {
-    type Item = <<Q as TQueryItem>::Collection<'q> as TCollection<'q>>::Item;
+    type Item = <<Q as TQueryItem>::Collection<'q> as TCollection>::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.outer_index >= self.result.len() {
