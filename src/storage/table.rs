@@ -38,7 +38,7 @@ impl EntityTable {
             .any(|ci| ci.id == TypeInfo::of::<T>().id)
     }
 
-    pub fn has_query<Q: TQueryItem>(&self) -> bool {
+    pub fn has_query<'q, Q: TQueryItem<'q>>(&self) -> bool {
         // let query_typeinfo = TypeInfo::of::<Q>();
         todo!()
         // if self.column_info.iter().map(|ci| ci.type_name).

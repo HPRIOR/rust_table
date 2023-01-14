@@ -23,7 +23,7 @@ impl World {
     }
 
 
-    fn query<'a, Q: TQueryItem + TFilter + 'a + 'static>(&'a self) -> QueryExecutor<Q> {
+    fn query<'a, Q: TQueryItem<'a> + TFilter + 'a + 'static>(&'a mut self) -> QueryExecutor<Q> {
         QueryExecutor::new(self)
     }
 }
