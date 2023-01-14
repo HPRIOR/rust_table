@@ -1,6 +1,6 @@
 use crate::storage::{component::Component, table::EntityTable};
 use crate::storage::component::TypeInfo;
-use crate::storage::query::{TInclude, TQueryItem, Query};
+use crate::storage::query::{TInclude, TQueryItem, QueryInit};
 
 pub struct World {
     pub entity_tables: Vec<EntityTable>,
@@ -16,15 +16,16 @@ impl World {
         Self { entity_tables: tables }
     }
 
-    pub fn spawn_entity(&mut self, entities: Vec<Box<dyn Component>>) {
+    pub fn spawn_entity(&mut self, entities: Vec<Box<dyn Component>>) { // should return some
+                                                                        // entity ID
         // check if table exists for entities 
         // if not then create table and add it to tables/
         // return some entity ID that can reference an entity 
     }
 
 
-    fn query<'a, Q: TQueryItem + TInclude + 'a + 'static>(&'a mut self) -> Query<Q> {
-        Query::new(self)
+    fn query<'a, Q: TQueryItem + TInclude + 'a + 'static>(&'a mut self) -> QueryInit<Q> {
+        QueryInit::new(self)
     }
 }
 
@@ -48,7 +49,7 @@ mod tests {
         });
 
         let tables = vec![table];
-        let mut ecs = World::new_vec(tables);
+        let mut world = World::new_vec(tables);
 
         let ref_info = TypeInfo::of::<&i32>();
         let literal_info = TypeInfo::of::<i32>();
@@ -56,12 +57,11 @@ mod tests {
         println!("{:#?}", ref_info);
         println!("{:#?}", literal_info);
 
-        let mut query = ecs.query::<(&i32, &f32)>();
-        let result = query.get().execute().data();
+        let mut query = world.query::<(&i32, &f32)>().execute();
 
-        // for element in result{
-        //     println!("{:#?}", element);
-        // }
+        for element in query{
+            println!("{:#?}", element);
+        }
     }
 }
 

@@ -167,6 +167,41 @@ impl<A: TInclude, B: TInclude> TInclude for (A, B) {
 
 
 // -> API <- //
+
+pub struct QueryResult<Q: TQueryItem> {
+    result: Vec<Q::Collection>,
+    inner_index: usize,
+    outer_index: usize,
+}
+
+impl<Q: TQueryItem> QueryResult<Q> {
+    fn new(filtered_tables: Vec<Q::Collection>) -> Self {
+        Self {
+            result: filtered_tables,
+            inner_index: 0,
+            outer_index: 0,
+        }
+    }
+}
+
+impl<Q: TQueryItem> Iterator for QueryResult<Q> {
+    type Item = <<Q as TQueryItem>::Collection as TCollection>::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.outer_index >= self.result.len() {
+            None
+        } else if self.inner_index >= self.result[self.outer_index].length() {
+            self.outer_index += 1;
+            self.inner_index = 0;
+            self.next()
+        } else {
+            let result = self.result[self.outer_index].get(self.inner_index);
+            self.inner_index += 1;
+            Some(result)
+        }
+    }
+}
+
 pub struct QueryFilter {
     included: HashSet<TypeId>,
     excluded: HashSet<TypeId>,
@@ -197,15 +232,13 @@ impl QueryFilter {
     }
 }
 
-pub struct Query<'world, Q: TQueryItem> {
+pub struct QueryInit<'world, Q: TQueryItem> {
     world: &'world mut World,
     filters: QueryFilter,
-    result: Vec<Q::Collection>,
-    inner_index: usize,
-    outer_index: usize,
+    _marker: PhantomData<Q>,
 }
 
-impl<'world, Q: TQueryItem + TInclude> Query<'world, Q> {
+impl<'world, Q: TQueryItem + TInclude> QueryInit<'world, Q> {
     pub fn new(world: &'world mut World) -> Self {
         // apply initial 'With' filter to include queried items
         let mut filters: QueryFilter = Default::default();
@@ -214,9 +247,7 @@ impl<'world, Q: TQueryItem + TInclude> Query<'world, Q> {
         Self {
             world,
             filters,
-            result: Default::default(),
-            inner_index: 0,
-            outer_index: 0,
+            _marker: Default::default(),
         }
     }
 
@@ -225,42 +256,20 @@ impl<'world, Q: TQueryItem + TInclude> Query<'world, Q> {
         self
     }
 
-    pub fn execute(&mut self) -> &mut Self {
-        unsafe {
-            self.result =
-                self
-                    .world
-                    .entity_tables
-                    .iter_mut()
-                    .filter(|t| {
-                        let signature = &self.filters.signature();
-                        t.has_signature(signature)
-                    })
-                    .map(|t| Q::get(t))
-                    .collect();
-        }
-        self
-    }
-    pub fn data(&self) -> &Vec<Q::Collection> {
-        &self.result
-    }
-}
+    pub fn execute(mut self) -> QueryResult<Q> {
+        let filtered_tables =
+            self
+                .world
+                .entity_tables
+                .iter_mut()
+                .filter(|t| {
+                    let signature = &self.filters.signature();
+                    t.has_signature(signature)
+                })
+                .map(|t| Q::get(t))
+                .collect();
 
-impl<'q, Q: TQueryItem> Iterator for Query<'q, Q> {
-    type Item = <<Q as TQueryItem>::Collection as TCollection>::Item;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.outer_index >= self.result.len() {
-            None
-        } else if self.inner_index >= self.result[self.outer_index].length() {
-            self.outer_index += 1;
-            self.inner_index = 0;
-            self.next()
-        } else {
-            let result = self.result[self.outer_index].get(self.inner_index);
-            self.inner_index += 1;
-            Some(result)
-        }
+        QueryResult::new(filtered_tables)
     }
 }
 
@@ -286,9 +295,8 @@ pub fn test() {
     let tables = vec![table_one, table_two];
     let mut world = World::new_vec(tables);
 
-    let mut query: Query<&i32> = Query::new(&mut world);
+    let mut query: QueryResult<&i32> = QueryInit::new(&mut world).execute();
 
-    query.without::<&u8>().execute();
 
     for a in query {
         println!("{}", a);
