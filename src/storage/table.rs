@@ -10,9 +10,11 @@ use super::{
 
 #[derive(Debug)]
 pub struct EntityTable {
+    // add unique ID
     pub columns: Box<[Column]>,
     column_info: Vec<TypeInfo>,
-    column_id_set: HashSet<TypeId>,
+    // should be sorted
+    column_id_set: HashSet<TypeId>, // remove and lift into map in ECS system componentID/typeID ->  archetype
 }
 
 impl EntityTable {
@@ -32,6 +34,8 @@ impl EntityTable {
         }
     }
 
+    // this should be lifted out to a higher module
+    // e.g. ecs system will keep a hashmap of component type to entity tables which contain that type
     pub fn has<T: Component>(&self) -> bool {
         self.column_info
             .iter()
@@ -44,9 +48,9 @@ impl EntityTable {
         // if self.column_info.iter().map(|ci| ci.type_name).
     }
 
-    /// Returns true if table contains all of the input types
+    /// Returns true if table contains any of the input types
     pub fn has_signature(&self, type_ids: &HashSet<TypeId>) -> bool {
-        type_ids.intersection(&self.column_id_set).count() == type_ids.len()
+        type_ids.eq(&self.column_id_set)
     }
 
     fn get_column_index<T: Component>(&self, type_info: &TypeInfo) -> Option<usize> {

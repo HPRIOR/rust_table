@@ -1,19 +1,25 @@
+use std::any::TypeId;
+use std::collections::{HashMap, HashSet};
 use crate::storage::{component::Component, table::EntityTable};
 use crate::storage::component::TypeInfo;
 use crate::storage::query::{TInclude, TQueryItem, QueryInit};
 
+type EntityTableId = u64;
+
 pub struct World {
     pub entity_tables: Vec<EntityTable>,
+    tables_with_component_id: HashMap<TypeId, HashSet<EntityTable>> // tableId ->  table
 }
 
 impl World {
     pub fn new() -> Self {
         Self {
-            entity_tables: vec![]
+            entity_tables: vec![],
+            tables_with_component_id: Default::default()
         }
     }
     pub fn new_vec(tables: Vec<EntityTable>) -> Self {
-        Self { entity_tables: tables }
+        Self { entity_tables: tables, tables_with_component_id: Default::default() }
     }
 
     pub fn spawn_entity(&mut self, entities: Vec<Box<dyn Component>>) { // should return some
@@ -24,6 +30,7 @@ impl World {
     }
 
 
+    /// Main interface for querying
     fn query<'a, Q: TQueryItem + TInclude + 'a + 'static>(&'a mut self) -> QueryInit<Q> {
         QueryInit::new(self)
     }

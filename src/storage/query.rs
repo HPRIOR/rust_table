@@ -251,7 +251,7 @@ impl<'world, Q: TQueryItem + TInclude> QueryInit<'world, Q> {
         }
     }
 
-    pub fn without<F: TExclude>(&mut self) -> &mut Self {
+    pub fn without<F: TExclude>(mut self) -> Self {
         F::apply_filter(&mut self.filters);
         self
     }
@@ -295,7 +295,8 @@ pub fn test() {
     let tables = vec![table_one, table_two];
     let mut world = World::new_vec(tables);
 
-    let mut query: QueryResult<&i32> = QueryInit::new(&mut world).execute();
+    let mut query: QueryResult<&i32> =
+        QueryInit::new(&mut world).without::<&u8>().execute();
 
 
     for a in query {
