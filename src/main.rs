@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-mod ecs;
+mod world;
 mod storage;
 
 use std::marker::PhantomData;
