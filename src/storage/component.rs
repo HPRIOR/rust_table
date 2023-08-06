@@ -19,7 +19,7 @@ impl Ord for TypeInfo {
 
 impl PartialOrd for TypeInfo {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.type_name.partial_cmp(&other.type_name)
+        self.type_name.partial_cmp(other.type_name)
     }
 }
 
@@ -38,17 +38,13 @@ impl TypeInfo {
 }
 
 pub trait Component: Send + Sync + 'static {
-    fn as_component(self) -> Box<dyn Component>;
+    fn to_component_ref(self) -> Box<dyn Component>;
     fn type_info(&self) -> TypeInfo;
 }
 
 impl<T: Send + Sync + 'static> Component for T {
-    fn as_component(self) -> Box<dyn Component> {
-        Box::new(self)
-    }
-    fn type_info(&self) -> TypeInfo {
-        TypeInfo::of::<T>()
-    }
+    fn to_component_ref(self) -> Box<dyn Component> { Box::new(self) }
+    fn type_info(&self) -> TypeInfo { TypeInfo::of::<T>() }
 }
 
 pub struct Type {}
@@ -62,4 +58,25 @@ impl Type {
     pub unsafe fn get_box_ptr(component: Box<dyn Component>) -> *mut u8 {
         Box::into_raw(component).cast()
     }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use crate::storage::component::Component;
+
+    #[test]
+    fn component_type_info_will_retrieve_correct_name(){
+        let str = "hello";
+        let type_info = str.type_info();
+        assert_eq!(type_info.type_name, "&str")
+    }
+
+    // #[test]
+    // fn component_type_info_will_retrieve_correct_name_for_boxed_types(){
+    //     let str = Box::new("hello");
+    //     let type_info = str.type_info();
+    //     assert_eq!(type_info.type_name, "&str")
+    // }
+
 }

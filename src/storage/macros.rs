@@ -1,5 +1,4 @@
-use crate::storage::component::TypeInfo;
-use crate::storage::table::EntityTable;
+use crate::storage::component::{Component, TypeInfo};
 use count_macro::count;
 use std::any::TypeId;
 use std::collections::HashSet;
@@ -10,18 +9,21 @@ use std::ops::Add;
 macro_rules! entity {
     ($($x:expr),*) => {
         {
-            let mut temp_vec = Vec::new();
+            // let mut temp_vec: Vec<Box<dyn Component>> = Vec::new();
+            // $(
+            //     temp_vec.push($x.to_component_ref());
+            // )*
+            let mut temp_vec: Vec<Box<dyn Component>> = vec![
             $(
-                temp_vec.push($x.as_component());
-            )*
+                $x.to_component_ref(),
+            )* ];
 
-            temp_vec.sort_by(|a, b| a.type_info().partial_cmp(&b.type_info()).unwrap());
+            temp_vec.sort_by(|a, b| a.type_info().id.partial_cmp(&b.type_info().id).unwrap());
+
             temp_vec
         }
     };
 }
-
-
 
 // #[macro_export]
 // macro_rules! create_query {

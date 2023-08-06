@@ -1,32 +1,35 @@
-use std::any::TypeId;
-use std::collections::HashSet;
-use std::fmt;
-use std::fmt::Formatter;
-use crate::storage::query::TQueryItem;
 use super::{
     column::Column,
     component::{Component, Type, TypeInfo},
 };
+use crate::{storage::query::TQueryItem, world::EntityIdGen};
+use std::any::TypeId;
+use std::collections::HashSet;
+use std::fmt;
+use std::fmt::Formatter;
 
 #[derive(Debug)]
 pub struct EntityTable {
     // add unique ID
     pub columns: Box<[Column]>,
     column_info: Vec<TypeInfo>,
-    // should be sorted
-    column_id_set: HashSet<TypeId>, // remove and lift into map in ECS system componentID/typeID ->  archetype
 }
 
+
 impl EntityTable {
-    pub fn new(type_infos: Vec<TypeInfo>) -> Self {
+    pub fn new(mut type_infos: Vec<TypeInfo>) -> Self {
+        type_infos.sort_by(|a, b| a.id.cmp(&b.id));
         Self {
             columns: type_infos.iter().map(|ti| Column::new(*ti)).collect(),
-            column_id_set: type_infos.iter().map(|ti| ti.id).collect(),
             column_info: type_infos,
         }
     }
 
+    /// assumes sorted by type_id
     pub fn add(&mut self, mut components: Vec<Box<dyn Component>>) {
+        // probably very slow - needed to ensure columns are allocated the correect type -- also
+        // duplicated due to the entity! macro
+        components.sort_by(|a, b| (**a).type_info().id.cmp(&(**b).type_info().id));
         unsafe {
             (0..(components.len()))
                 .rev()
@@ -42,17 +45,7 @@ impl EntityTable {
             .any(|ci| ci.id == TypeInfo::of::<T>().id)
     }
 
-    pub fn has_query<'q, Q: TQueryItem>(&self) -> bool {
-        // let query_typeinfo = TypeInfo::of::<Q>();
-        todo!()
-        // if self.column_info.iter().map(|ci| ci.type_name).
-    }
-
-    /// Returns true if table contains any of the input types
-    pub fn has_signature(&self, type_ids: &HashSet<TypeId>) -> bool {
-        type_ids.eq(&self.column_id_set)
-    }
-
+    // todo: this should be cached Hash<TypeInfo, usize>
     fn get_column_index<T: Component>(&self, type_info: &TypeInfo) -> Option<usize> {
         let t_id = type_info.id;
         self.column_info
@@ -60,7 +53,7 @@ impl EntityTable {
             .enumerate()
             .filter(|(i, ti)| ti.id == t_id)
             .map(|(i, _)| i)
-            .nth(0)
+            .next()
     }
 
     /// Caller must check whether column is available in table first - panics

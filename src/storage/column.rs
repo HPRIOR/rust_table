@@ -8,6 +8,7 @@ use std::{
 use super::component::{Component, Type, TypeInfo};
 use std::alloc;
 
+
 #[derive(Debug)]
 pub struct Column {
     ptr: NonNull<u8>,
@@ -31,7 +32,7 @@ impl Column {
     fn grow(&mut self) {
         let (new_cap, new_layout) = if self.cap == 0 {
             let layout = Layout::from_size_align(
-                self.type_info.layout.size() * 1,
+                self.type_info.layout.size(),
                 self.type_info.layout.align(),
             )
             .unwrap();
@@ -95,3 +96,4 @@ impl Column {
         unsafe { core::slice::from_raw_parts_mut(self.ptr.as_ptr().cast::<T>(), self.len) }
     }
 }
+// todo test push component

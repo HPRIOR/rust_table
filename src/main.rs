@@ -2,6 +2,7 @@
 
 mod world;
 mod storage;
+mod utils;
 
 use std::marker::PhantomData;
 use crate::storage::component::Component;
@@ -10,7 +11,7 @@ use crate::storage::table::EntityTable;
 use std::any::TypeId;
 use std::collections::HashSet;
 use count_macro::count;
-use crate::storage::query::test;
+// use crate::storage::query::test;
 // use storage::query::Query;
 // use storage::query::QueryTuple;
 // use storage::query::use_query_interface;
@@ -23,6 +24,8 @@ struct Position {
 
 fn main() {
     // let init_entity = entity![1 + 1 as i32, (1 / 2) as f32];
+    todo!("this isn't implemented yet");
+
     // let type_infos: Vec<TypeInfo> = init_entity.iter().map(|c| (**c).type_info()).collect();
     // let mut table = EntityTable::new(type_infos);
     // (0..10000).for_each(|n| {
@@ -43,7 +46,7 @@ fn main() {
     // let t = TypeInfo::of::<&i32>();
     // println!("{:#?}", t)
 
-    test();
+    // test();
 
 
 
