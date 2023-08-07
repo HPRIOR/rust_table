@@ -48,6 +48,7 @@ impl EntityIdGen {
     }
 }
 
+// TableKey should be bitset
 type TableKey = Vec<TypeId>;
 
 pub struct World {
@@ -55,6 +56,7 @@ pub struct World {
     entity_id_gen: EntityIdGen,
 
     entity_id_to_table_id: HashMap<EntityId, TableId>,
+    
     table_ids_with_signature: HashMap<TableKey, TableId>,
     pub tables: HashMap<TableId, EntityTable>,
     pub tables_with_component_id: HashMap<TypeId, HashSet<TableId>>,
@@ -105,7 +107,9 @@ impl World {
         }
     }
 
+    // todo bitsets
     pub fn spawn(&mut self, entity: Vec<Box<dyn Component>>) -> EntityId {
+        // generate bitset 
         let table_key: TableKey = {
             // must deref boxed input to get underlying type, otherwise  Box<_> is the Component
             let mut keys: Vec<TypeId> = entity.iter().map(|c| (**c).type_info().id).collect();

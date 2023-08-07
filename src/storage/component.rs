@@ -3,6 +3,14 @@ use std::{
     any::TypeId,
 };
 
+// We need some efficient way to identify groups of components that make up a table
+// This can be done using a bitset: each component type has an index into a bitset, 
+// an array of components can then be transformed into a bitset for fast comparisons.
+// Primitive types can be assigned an index into a bitset, 
+// custom types will need to be registered, hopefully with attribute macros:
+// #[component]
+// struct Vector3 { ... }
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct TypeInfo {
     pub id: TypeId,

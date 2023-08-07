@@ -2,7 +2,7 @@ use super::{
     column::Column,
     component::{Component, Type, TypeInfo},
 };
-use crate::{storage::query::TQueryItem, world::EntityIdGen};
+use crate::world::EntityIdGen;
 use std::any::TypeId;
 use std::collections::HashSet;
 use std::fmt;
@@ -57,17 +57,17 @@ impl EntityTable {
     }
 
     /// Caller must check whether column is available in table first - panics
-    pub fn get<T: Component>(&self) -> &[T] {
+    pub fn get<T: Component>(&self) -> std::slice::Iter<T> {
         let t_info = TypeInfo::of::<T>();
         let index = self.get_column_index::<T>(&t_info).unwrap();
-        self.columns[index].get_column()
+        self.columns[index].get_column().iter()
     }
 
     /// Caller must check whether column is available in table first - panics
-    pub fn get_mut<T: Component>(&mut self) -> &mut [T] {
+    pub fn get_mut<T: Component>(&mut self) -> std::slice::IterMut<T> {
         let t_info = TypeInfo::of::<T>();
         let index = self.get_column_index::<T>(&t_info).unwrap();
-        self.columns[index].get_column_mut()
+        self.columns[index].get_column_mut().iter_mut()
     }
 }
 
