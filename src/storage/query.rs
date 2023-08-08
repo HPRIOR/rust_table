@@ -148,18 +148,24 @@ mod tests {
     #[test]
     fn test() {
         let mut world = World::new();
-        (0..5).for_each(|_| {
+        let amount = 1000000;
+        (0..amount).for_each(|_| {
             world.spawn(entity!(8_u8, 20_i32));
         });
-        (0..5).for_each(|_| {
+        (0..amount).for_each(|_| {
             world.spawn(entity!(9_u8, 10_i32));
         });
+        println!("{} entities created", amount * 2);
         let query = QueryInit::<(&u8, &mut i32)>::new(&mut world).execute();
+        let mut t = 0;
         for (x, y) in query {
-            // println!("{:?}, {:?}", item, item2);
             *y += *x as i32;
-            println!("{:?}", y);
+            t += *y;
+            // println!("{:?}", y);
         }
+
+
+        println!("query complete: {}", t);
         // assert_eq!(query.count(), 2000)
     }
 }

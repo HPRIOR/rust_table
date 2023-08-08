@@ -17,9 +17,6 @@ macro_rules! entity {
             $(
                 $x.to_component_ref(),
             )* ];
-
-            temp_vec.sort_by(|a, b| a.type_info().id.partial_cmp(&b.type_info().id).unwrap());
-
             temp_vec
         }
     };

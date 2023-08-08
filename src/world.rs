@@ -57,10 +57,12 @@ pub struct World {
     // used to generate bitmap
     pub type_id_index: Vec<TypeId>,
     entity_id_to_table_id: HashMap<EntityId, TableId>,
+
     pub table_ids_with_signature: HashMap<BitSet, TableId>,
     pub tables: HashMap<TableId, EntityTable>,
 }
 
+// todo, support adding arbitrary types
 fn gen_typeid_map() -> Vec<TypeId> {
     vec![
         TypeId::of::<i8>(),
@@ -81,6 +83,7 @@ fn gen_typeid_map() -> Vec<TypeId> {
         TypeId::of::<char>(),
         TypeId::of::<String>(),
         TypeId::of::<&str>(),
+        TypeId::of::<str>(),
     ]
 }
 
@@ -116,13 +119,16 @@ impl World {
         todo!()
     }
 
-    // todo bitsets
+
+    // Slow for a number of reasons. 
+    // Need to create Box dyn Component for each input, moving around in memory alot
+    // Solution -> use a similar Trait structure
+    // Several data structures need to be updated 
     pub fn spawn(&mut self, entity: Vec<Box<dyn Component>>) -> EntityId {
-        // generate bitset
         let table_key: BitSet = {
-            // must deref boxed input to get underlying type, otherwise  Box<_> is the Component
             let mut bit_set = BitSet::new();
 
+            // must deref boxed input to get underlying type, otherwise  Box<_> is the Component
             entity.iter().map(|c| (**c).type_info().id).for_each(|id| {
                 bit_set.insert(
                     self.type_id_index
