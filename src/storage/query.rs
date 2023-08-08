@@ -23,7 +23,7 @@ pub trait TQueryItem {
 
 pub trait TTableKey {
     // todo bitmap
-    fn get_keys(type_map: &HashMap<TypeId, usize>) -> BitSet;
+    fn get_key(type_map: &[TypeId]) -> BitSet;
 }
 
 // -> Base Implementations <- //
@@ -46,9 +46,12 @@ impl<'a, T: Component> TQueryItem for &'a mut T {
 }
 
 impl<'a, T: Component> TTableKey for &'a T {
-    fn get_keys(type_map: &HashMap<TypeId, usize>) -> BitSet {
+    fn get_key(type_map: &[TypeId]) -> BitSet {
         let type_info = TypeInfo::of::<T>().id;
-        let i = type_map[&type_info];
+        let i = type_map
+            .iter()
+            .position(|type_id| *type_id == type_info)
+            .unwrap();
         let mut bit_set = BitSet::new();
         bit_set.insert(i);
         bit_set
@@ -56,9 +59,12 @@ impl<'a, T: Component> TTableKey for &'a T {
 }
 
 impl<'a, T: Component> TTableKey for &'a mut T {
-    fn get_keys(type_map: &HashMap<TypeId, usize>) -> BitSet {
+    fn get_key(type_map: &[TypeId]) -> BitSet {
         let type_info = TypeInfo::of::<T>().id;
-        let i = type_map[&type_info];
+        let i = type_map
+            .iter()
+            .position(|type_id| *type_id == type_info)
+            .unwrap();
         let mut bit_set = BitSet::new();
         bit_set.insert(i);
         bit_set
@@ -66,9 +72,9 @@ impl<'a, T: Component> TTableKey for &'a mut T {
 }
 
 impl<A: TTableKey, B: TTableKey> TTableKey for (A, B) {
-    fn get_keys(type_map: &HashMap<TypeId, usize>) -> BitSet {
-        let mut bit_set_a = A::get_keys(type_map);
-        let bit_set_b = B::get_keys(type_map);
+    fn get_key(type_map: &[TypeId]) -> BitSet {
+        let mut bit_set_a = A::get_key(type_map);
+        let bit_set_b = B::get_key(type_map);
         bit_set_a.union_with(&bit_set_b);
         bit_set_a
     }
@@ -101,11 +107,9 @@ impl<'world, Q: TQueryItem + TTableKey> QueryInit<'world, Q> {
     pub fn execute(mut self) -> Box<dyn Iterator<Item = Q::Item> + 'world> {
         let table_sigs = &self.world.table_ids_with_signature;
         let type_id_index = &self.world.type_id_index;
-        // this should be a bitset
-        // let component_keys = Q::get_keys();
-        let component_keys: BitSet = Q::get_keys(type_id_index);
+        let component_keys: BitSet = Q::get_key(type_id_index);
 
-        let table_columns = table_sigs 
+        let table_columns = table_sigs
             .keys()
             .filter(move |table_sig| component_keys.is_subset(table_sig))
             .filter_map(|key| table_sigs.get(key))
@@ -114,7 +118,8 @@ impl<'world, Q: TQueryItem + TTableKey> QueryInit<'world, Q> {
                     .tables
                     .get_mut(table_id)
                     .map(|table| Q::get_data(table))
-            }).flatten();
+            })
+            .flatten();
 
         Box::new(table_columns)
     }
@@ -144,15 +149,16 @@ mod tests {
     fn test() {
         let mut world = World::new();
         (0..5).for_each(|_| {
-            world.spawn(entity!(8_u8, "hello".to_string()));
+            world.spawn(entity!(8_u8, 20_i32));
         });
         (0..5).for_each(|_| {
             world.spawn(entity!(9_u8, 10_i32));
         });
-        let query = QueryInit::<&u8>::new(&mut world).execute();
-        for (item) in query {
+        let query = QueryInit::<(&u8, &mut i32)>::new(&mut world).execute();
+        for (x, y) in query {
             // println!("{:?}, {:?}", item, item2);
-            println!("{:?}", item);
+            *y += *x as i32;
+            println!("{:?}", y);
         }
         // assert_eq!(query.count(), 2000)
     }

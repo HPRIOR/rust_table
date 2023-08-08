@@ -55,33 +55,33 @@ pub struct World {
     entity_id_gen: EntityIdGen,
 
     // used to generate bitmap
-    pub type_id_index: HashMap<TypeId, usize>,
+    pub type_id_index: Vec<TypeId>,
     entity_id_to_table_id: HashMap<EntityId, TableId>,
     pub table_ids_with_signature: HashMap<BitSet, TableId>,
     pub tables: HashMap<TableId, EntityTable>,
 }
 
-fn gen_typeid_map() -> HashMap<TypeId, usize> {
-    let mut map = HashMap::<TypeId, usize>::new();
-    map.insert(TypeId::of::<i8>(), 0);
-    map.insert(TypeId::of::<i16>(), 1);
-    map.insert(TypeId::of::<i32>(), 2);
-    map.insert(TypeId::of::<i64>(), 3);
-    map.insert(TypeId::of::<i128>(), 4);
-    map.insert(TypeId::of::<isize>(), 5);
-    map.insert(TypeId::of::<u8>(), 6);
-    map.insert(TypeId::of::<u16>(), 7);
-    map.insert(TypeId::of::<u32>(), 8);
-    map.insert(TypeId::of::<u64>(), 9);
-    map.insert(TypeId::of::<u128>(), 10);
-    map.insert(TypeId::of::<usize>(), 11);
-    map.insert(TypeId::of::<f32>(), 12);
-    map.insert(TypeId::of::<f64>(), 13);
-    map.insert(TypeId::of::<bool>(), 14);
-    map.insert(TypeId::of::<char>(), 15);
-    map.insert(TypeId::of::<String>(), 16);
-    map.insert(TypeId::of::<&str>(), 17);
-    map
+fn gen_typeid_map() -> Vec<TypeId> {
+    vec![
+        TypeId::of::<i8>(),
+        TypeId::of::<i16>(),
+        TypeId::of::<i32>(),
+        TypeId::of::<i64>(),
+        TypeId::of::<i128>(),
+        TypeId::of::<isize>(),
+        TypeId::of::<u8>(),
+        TypeId::of::<u16>(),
+        TypeId::of::<u32>(),
+        TypeId::of::<u64>(),
+        TypeId::of::<u128>(),
+        TypeId::of::<usize>(),
+        TypeId::of::<f32>(),
+        TypeId::of::<f64>(),
+        TypeId::of::<bool>(),
+        TypeId::of::<char>(),
+        TypeId::of::<String>(),
+        TypeId::of::<&str>(),
+    ]
 }
 
 impl World {
@@ -116,15 +116,20 @@ impl World {
         todo!()
     }
 
-
     // todo bitsets
     pub fn spawn(&mut self, entity: Vec<Box<dyn Component>>) -> EntityId {
         // generate bitset
         let table_key: BitSet = {
             // must deref boxed input to get underlying type, otherwise  Box<_> is the Component
             let mut bit_set = BitSet::new();
+
             entity.iter().map(|c| (**c).type_info().id).for_each(|id| {
-                bit_set.insert(self.type_id_index[&id]);
+                bit_set.insert(
+                    self.type_id_index
+                        .iter()
+                        .position(|type_id| *type_id == id)
+                        .unwrap(),
+                );
             });
             bit_set
         };
