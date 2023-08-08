@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 count-macro = "0.2.2"
+bit-set = "0.5.3"
+phf = { version = "0.11", features = ["macros"] }

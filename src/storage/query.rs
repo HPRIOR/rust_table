@@ -1,9 +1,11 @@
+use bit_set::BitSet;
+
 use crate::storage::component::{Type, TypeInfo};
 use crate::utils::utils::IntersectAll;
 use crate::world::{TableId, World};
 use crate::{entity, query, storage};
 use std::any::{Any, TypeId};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::iter::{Flatten, Zip};
 use std::marker::PhantomData;
 use std::ops::Deref;
@@ -19,12 +21,9 @@ pub trait TQueryItem {
     fn get_data(table: *mut EntityTable) -> Self::Collection;
 }
 
-pub trait TTableKeySingle {
-    fn get_key() -> TypeId;
-}
-
 pub trait TTableKey {
-    fn get_keys() -> Vec<TypeId>;
+    // todo bitmap
+    fn get_keys(type_map: &HashMap<TypeId, usize>) -> BitSet;
 }
 
 // -> Base Implementations <- //
@@ -46,35 +45,32 @@ impl<'a, T: Component> TQueryItem for &'a mut T {
     }
 }
 
-impl<'a, T: Component> TTableKeySingle for &'a T {
-    fn get_key() -> TypeId {
-        TypeInfo::of::<T>().id
-    }
-}
-
 impl<'a, T: Component> TTableKey for &'a T {
-    fn get_keys() -> Vec<TypeId> {
-        vec![TypeInfo::of::<T>().id]
-    }
-}
-
-impl<'a, T: Component> TTableKeySingle for &'a mut T {
-    fn get_key() -> TypeId {
-        TypeInfo::of::<T>().id
+    fn get_keys(type_map: &HashMap<TypeId, usize>) -> BitSet {
+        let type_info = TypeInfo::of::<T>().id;
+        let i = type_map[&type_info];
+        let mut bit_set = BitSet::new();
+        bit_set.insert(i);
+        bit_set
     }
 }
 
 impl<'a, T: Component> TTableKey for &'a mut T {
-    fn get_keys() -> Vec<TypeId> {
-        vec![TypeInfo::of::<T>().id]
+    fn get_keys(type_map: &HashMap<TypeId, usize>) -> BitSet {
+        let type_info = TypeInfo::of::<T>().id;
+        let i = type_map[&type_info];
+        let mut bit_set = BitSet::new();
+        bit_set.insert(i);
+        bit_set
     }
 }
 
-impl<A: TTableKeySingle, B: TTableKeySingle> TTableKey for (A, B) {
-    fn get_keys() -> Vec<TypeId> {
-        let mut type_ids: Vec<TypeId> = vec![A::get_key(), B::get_key()];
-        type_ids.sort();
-        type_ids
+impl<A: TTableKey, B: TTableKey> TTableKey for (A, B) {
+    fn get_keys(type_map: &HashMap<TypeId, usize>) -> BitSet {
+        let mut bit_set_a = A::get_keys(type_map);
+        let bit_set_b = B::get_keys(type_map);
+        bit_set_a.union_with(&bit_set_b);
+        bit_set_a
     }
 }
 
@@ -103,30 +99,24 @@ impl<'world, Q: TQueryItem + TTableKey> QueryInit<'world, Q> {
     }
 
     pub fn execute(mut self) -> Box<dyn Iterator<Item = Q::Item> + 'world> {
-        let table_map = &self.world.tables_with_component_id;
-        // this should be a bitset 
-        let component_keys = Q::get_keys();
+        let table_sigs = &self.world.table_ids_with_signature;
+        let type_id_index = &self.world.type_id_index;
+        // this should be a bitset
+        // let component_keys = Q::get_keys();
+        let component_keys: BitSet = Q::get_keys(type_id_index);
 
-        // todo this should return a vector of bitsets from table_ids_with_signature
-        let matching_table_ids: Vec<&HashSet<TableId>> = component_keys
-            .into_iter()
-            .filter_map(|id| table_map.get(&id))
-            .collect();
-
-        // todo when bitsets bitwise comparisons can be made (equality, subset, superset, disjoint)
-        // extremely efficiently 
-        let result = matching_table_ids
-            .intersect_all()
-            .into_iter()
+        let table_columns = table_sigs 
+            .keys()
+            .filter(move |table_sig| component_keys.is_subset(table_sig))
+            .filter_map(|key| table_sigs.get(key))
             .filter_map(|table_id| {
                 self.world
                     .tables
-                    .get_mut(&table_id)
+                    .get_mut(table_id)
                     .map(|table| Q::get_data(table))
-            })
-            .flatten();
+            }).flatten();
 
-        Box::new(result)
+        Box::new(table_columns)
     }
 }
 
@@ -135,7 +125,6 @@ mod tests {
     use crate::storage::component::Component;
     use crate::{
         entity,
-        storage::query::TTableKeySingle,
         world::{EntityId, World},
     };
     use std::any::{Any, TypeId};
@@ -155,11 +144,15 @@ mod tests {
     fn test() {
         let mut world = World::new();
         (0..5).for_each(|_| {
-            world.spawn(entity!(Id1::Id1(8), Id2::Id2(4)));
+            world.spawn(entity!(8_u8, "hello".to_string()));
         });
-        let query = QueryInit::<(&Id1, &Id2)>::new(&mut world).execute();
-        for (item, item2) in query {
-            println!("{:?}, {:?}", item, item2);
+        (0..5).for_each(|_| {
+            world.spawn(entity!(9_u8, 10_i32));
+        });
+        let query = QueryInit::<&u8>::new(&mut world).execute();
+        for (item) in query {
+            // println!("{:?}, {:?}", item, item2);
+            println!("{:?}", item);
         }
         // assert_eq!(query.count(), 2000)
     }

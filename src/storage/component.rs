@@ -1,15 +1,26 @@
-use std::{
-    alloc::Layout,
-    any::TypeId,
-};
+use std::{alloc::Layout, any::TypeId, collections::{HashSet, HashMap}};
 
 // We need some efficient way to identify groups of components that make up a table
-// This can be done using a bitset: each component type has an index into a bitset, 
+// This can be done using a bitset: each component type has an index into a bitset,
 // an array of components can then be transformed into a bitset for fast comparisons.
-// Primitive types can be assigned an index into a bitset, 
+// Primitive types can be assigned an index into a bitset,
 // custom types will need to be registered, hopefully with attribute macros:
 // #[component]
 // struct Vector3 { ... }
+//
+
+#[derive(Default)]
+struct TypeBitMap {
+    map: HashSet<TypeId, u8>,
+}
+
+impl TypeBitMap {
+    fn new() -> Self {
+        Default::default()
+    }
+
+
+}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct TypeInfo {
@@ -51,8 +62,12 @@ pub trait Component: Send + Sync + 'static {
 }
 
 impl<T: Send + Sync + 'static> Component for T {
-    fn to_component_ref(self) -> Box<dyn Component> { Box::new(self) }
-    fn type_info(&self) -> TypeInfo { TypeInfo::of::<T>() }
+    fn to_component_ref(self) -> Box<dyn Component> {
+        Box::new(self)
+    }
+    fn type_info(&self) -> TypeInfo {
+        TypeInfo::of::<T>()
+    }
 }
 
 pub struct Type {}
@@ -68,13 +83,12 @@ impl Type {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::storage::component::Component;
 
     #[test]
-    fn component_type_info_will_retrieve_correct_name(){
+    fn component_type_info_will_retrieve_correct_name() {
         let str = "hello";
         let type_info = str.type_info();
         assert_eq!(type_info.type_name, "&str")
@@ -86,5 +100,4 @@ mod tests {
     //     let type_info = str.type_info();
     //     assert_eq!(type_info.type_name, "&str")
     // }
-
 }

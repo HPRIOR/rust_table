@@ -1,5 +1,7 @@
+use bit_set::BitSet;
+
 use crate::storage::component::TypeInfo;
-use crate::storage::query::{QueryInit, TQueryItem, TTableKeySingle, TTableKey};
+use crate::storage::query::{QueryInit, TQueryItem, TTableKey};
 use crate::storage::{component::Component, table::EntityTable};
 use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
@@ -48,18 +50,38 @@ impl EntityIdGen {
     }
 }
 
-// TableKey should be bitset
-type TableKey = Vec<TypeId>;
-
 pub struct World {
     table_id_gen: TableIdGen,
     entity_id_gen: EntityIdGen,
 
+    // used to generate bitmap
+    pub type_id_index: HashMap<TypeId, usize>,
     entity_id_to_table_id: HashMap<EntityId, TableId>,
-    
-    table_ids_with_signature: HashMap<TableKey, TableId>,
+    pub table_ids_with_signature: HashMap<BitSet, TableId>,
     pub tables: HashMap<TableId, EntityTable>,
-    pub tables_with_component_id: HashMap<TypeId, HashSet<TableId>>,
+}
+
+fn gen_typeid_map() -> HashMap<TypeId, usize> {
+    let mut map = HashMap::<TypeId, usize>::new();
+    map.insert(TypeId::of::<i8>(), 0);
+    map.insert(TypeId::of::<i16>(), 1);
+    map.insert(TypeId::of::<i32>(), 2);
+    map.insert(TypeId::of::<i64>(), 3);
+    map.insert(TypeId::of::<i128>(), 4);
+    map.insert(TypeId::of::<isize>(), 5);
+    map.insert(TypeId::of::<u8>(), 6);
+    map.insert(TypeId::of::<u16>(), 7);
+    map.insert(TypeId::of::<u32>(), 8);
+    map.insert(TypeId::of::<u64>(), 9);
+    map.insert(TypeId::of::<u128>(), 10);
+    map.insert(TypeId::of::<usize>(), 11);
+    map.insert(TypeId::of::<f32>(), 12);
+    map.insert(TypeId::of::<f64>(), 13);
+    map.insert(TypeId::of::<bool>(), 14);
+    map.insert(TypeId::of::<char>(), 15);
+    map.insert(TypeId::of::<String>(), 16);
+    map.insert(TypeId::of::<&str>(), 17);
+    map
 }
 
 impl World {
@@ -67,11 +89,10 @@ impl World {
         Self {
             table_id_gen: Default::default(),
             entity_id_gen: Default::default(),
-
+            type_id_index: gen_typeid_map(),
             entity_id_to_table_id: Default::default(),
             table_ids_with_signature: Default::default(),
             tables: Default::default(),
-            tables_with_component_id: Default::default(),
         }
     }
 
@@ -95,26 +116,17 @@ impl World {
         todo!()
     }
 
-    fn update_table_component_map(&mut self, table_key: &TableKey, table_id: TableId) {
-        for type_id in table_key.iter() {
-            if !self.tables_with_component_id.contains_key(type_id) {
-                self.tables_with_component_id
-                    .insert(*type_id, HashSet::new());
-            }
-            if let Some(table_id_set) = self.tables_with_component_id.get_mut(type_id) {
-                table_id_set.insert(table_id);
-            }
-        }
-    }
 
     // todo bitsets
     pub fn spawn(&mut self, entity: Vec<Box<dyn Component>>) -> EntityId {
-        // generate bitset 
-        let table_key: TableKey = {
+        // generate bitset
+        let table_key: BitSet = {
             // must deref boxed input to get underlying type, otherwise  Box<_> is the Component
-            let mut keys: Vec<TypeId> = entity.iter().map(|c| (**c).type_info().id).collect();
-            keys.sort();
-            keys
+            let mut bit_set = BitSet::new();
+            entity.iter().map(|c| (**c).type_info().id).for_each(|id| {
+                bit_set.insert(self.type_id_index[&id]);
+            });
+            bit_set
         };
 
         let table_exists = self.table_ids_with_signature.contains_key(&table_key);
@@ -124,7 +136,6 @@ impl World {
             let table_id = self.table_ids_with_signature[&table_key];
             if let Some(table) = self.tables.get_mut(&table_id) {
                 table.add(entity);
-                self.update_table_component_map(&table_key, table_id);
                 self.entity_id_to_table_id.insert(new_entity_id, table_id);
             }
         } else {
@@ -139,7 +150,6 @@ impl World {
             table.add(entity);
 
             let new_table_id = self.table_id_gen.next();
-            self.update_table_component_map(&table_key, new_table_id);
             self.entity_id_to_table_id
                 .insert(new_entity_id, new_table_id);
             self.table_ids_with_signature
