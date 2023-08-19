@@ -5,9 +5,10 @@ use std::{
     ptr::{self, NonNull},
 };
 
+use crate::world::EntityId;
+
 use super::component::{Component, Type, TypeInfo};
 use std::alloc;
-
 
 #[derive(Debug)]
 pub struct Column {
@@ -67,11 +68,10 @@ impl Column {
         self.cap = new_cap;
     }
 
-    pub fn push(&mut self, component_ptr: *mut u8) {
+    fn push_raw(&mut self, component_ptr: *mut u8) {
         if self.len == self.cap {
             self.grow();
         }
-        let type_id = self.type_info.id;
         let size = self.type_info.layout.size();
         let index = self.len;
 
@@ -83,17 +83,102 @@ impl Column {
         self.len += 1;
     }
 
-    pub fn push_component(&mut self, component: Box<dyn Component>) {
+    fn push<T: Component>(&mut self, mut component: T) {
         unsafe {
-            self.push(Type::get_box_ptr(component).cast());
+            let ptr = Type::get_ptr(&mut component);
+            self.push_raw(ptr);
         }
     }
 
-    pub fn get_column<T: Component>(&self) -> &[T] {
+    pub fn push_component(&mut self, component: Box<dyn Component>) {
+        unsafe {
+            self.push_raw(Type::get_box_ptr(component).cast());
+        }
+    }
+
+    pub fn get_slice<T: Component>(&self) -> &[T] {
         unsafe { core::slice::from_raw_parts(self.ptr.as_ptr().cast::<T>(), self.len) }
     }
-    pub fn get_column_mut<T: Component>(&mut self) -> &mut [T] {
+
+    pub fn get_mut_slice<T: Component>(&mut self) -> &mut [T] {
         unsafe { core::slice::from_raw_parts_mut(self.ptr.as_ptr().cast::<T>(), self.len) }
     }
+
+
+    pub fn get<T: Component>(&mut self, index: usize) -> Option<&T> {
+        if index > self.len {
+            None
+        } else {
+            unsafe { self.ptr.as_ptr().cast::<T>().add(index).as_ref() }
+        }
+    }
+
+    pub fn get_mut<T: Component>(&mut self, index: usize) -> Option<&mut T> {
+        if index > self.len {
+            None
+        } else {
+            unsafe { self.ptr.as_ptr().cast::<T>().add(index).as_mut() }
+        }
+    }
+
+    /// Warning: last entity replaces removed entity. Any entity tracking vector needs to be
+    /// modified by caller to reflect change
+    pub fn remove(&mut self, entity_index: usize) {
+        let size = self.type_info.layout.size();
+        if self.len - 1 == entity_index {
+            unsafe {
+                ptr::drop_in_place(self.ptr.as_ptr().add(self.len * size));
+            }
+            self.len -= 1;
+        } else {
+            unsafe {
+                let to_remove = self.ptr.as_ptr().add(entity_index * size);
+                let top = self.ptr.as_ptr().add((self.len - 1) * size).read();
+                ptr::replace(to_remove, top);
+                self.len -= 1;
+            }
+        }
+    }
 }
-// todo test push component
+
+#[cfg(test)]
+mod tests {
+    use crate::storage::component::TypeInfo;
+
+    use super::Column;
+
+    #[test]
+    fn can_create_with_an_arbitrary_type() {
+        let mut column = Column::new(TypeInfo::of::<i32>());
+        column.push(1);
+        column.push(2);
+        column.push(3);
+        assert_eq!(*column.get::<i32>(0).unwrap(), 1);
+        assert_eq!(*column.get::<i32>(1).unwrap(), 2);
+        assert_eq!(*column.get::<i32>(2).unwrap(), 3);
+    }
+
+    #[test]
+    fn can_modify_with_get_mut() {
+        let mut column = Column::new(TypeInfo::of::<i32>());
+        column.push(1);
+        column.push(2);
+        column.push(3);
+
+        let second = column.get_mut::<i32>(1).unwrap();
+        *second = 10;
+        assert_eq!(*column.get::<i32>(1).unwrap(), 10);
+    }
+
+    #[test]
+    fn removal_at_index_ensures_compact_data() {
+        let mut column = Column::new(TypeInfo::of::<i32>());
+        column.push(1);
+        column.push(2);
+        column.push(3);
+        column.remove(1);
+
+        assert_eq!(*column.get::<i32>(0).unwrap(), 1);
+        assert_eq!(*column.get::<i32>(1).unwrap(), 3);
+    }
+}

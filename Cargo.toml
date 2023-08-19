@@ -9,3 +9,5 @@ edition = "2021"
 count-macro = "0.2.2"
 bit-set = "0.5.3"
 phf = { version = "0.11", features = ["macros"] }
+hibitset = "0.6.3"
+rayon = "1.7"

@@ -57,7 +57,6 @@ pub struct World {
     // used to generate bitmap
     pub type_id_index: Vec<TypeId>,
     entity_id_to_table_id: HashMap<EntityId, TableId>,
-
     pub table_ids_with_signature: HashMap<BitSet, TableId>,
     pub tables: HashMap<TableId, EntityTable>,
 }
@@ -99,11 +98,18 @@ impl World {
         }
     }
 
+    pub fn register_component<T: Component>(&mut self) {
+        self.type_id_index.push(TypeId::of::<T>());
+    }
+
     pub fn add_components(
         &mut self,
         components: Vec<Box<dyn Component>>,
         entity: EntityId,
     ) -> EntityId {
+        // find table that entity is in
+        //
+        //
         todo!()
     }
 
@@ -119,11 +125,6 @@ impl World {
         todo!()
     }
 
-
-    // Slow for a number of reasons. 
-    // Need to create Box dyn Component for each input, moving around in memory alot
-    // Solution -> use a similar Trait structure
-    // Several data structures need to be updated 
     pub fn spawn(&mut self, entity: Vec<Box<dyn Component>>) -> EntityId {
         let table_key: BitSet = {
             let mut bit_set = BitSet::new();
@@ -146,7 +147,7 @@ impl World {
             // insert into existing table
             let table_id = self.table_ids_with_signature[&table_key];
             if let Some(table) = self.tables.get_mut(&table_id) {
-                table.add(entity);
+                table.add(entity, new_entity_id);
                 self.entity_id_to_table_id.insert(new_entity_id, table_id);
             }
         } else {
@@ -156,10 +157,10 @@ impl World {
                     .iter()
                     .map(|component| (**component).type_info())
                     .collect(),
+                table_key.clone(),
             );
 
-            table.add(entity);
-
+            table.add(entity, new_entity_id);
             let new_table_id = self.table_id_gen.next();
             self.entity_id_to_table_id
                 .insert(new_entity_id, new_table_id);
@@ -190,6 +191,8 @@ mod tests {
         let entities: Vec<EntityId> = (0..1000)
             .map(|_| world.spawn(entity!(1, 2, "hello")))
             .collect();
+
+        let query = world.query::<&u8>().execute();
         assert_eq!(entities.len(), 1000);
     }
 }
