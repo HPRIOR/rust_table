@@ -92,7 +92,7 @@ impl Column {
 
     pub fn push_component(&mut self, component: Box<dyn Component>) {
         unsafe {
-            self.push_raw(Type::get_box_ptr(component).cast());
+            self.push_raw(Type::get_box_ptr(component));
         }
     }
 
@@ -104,38 +104,65 @@ impl Column {
         unsafe { core::slice::from_raw_parts_mut(self.ptr.as_ptr().cast::<T>(), self.len) }
     }
 
-
     pub fn get<T: Component>(&mut self, index: usize) -> Option<&T> {
-        if index > self.len {
-            None
-        } else {
-            unsafe { self.ptr.as_ptr().cast::<T>().add(index).as_ref() }
+        match index > self.len.saturating_sub(1) {
+            true => None,
+            false => unsafe { self.ptr.as_ptr().cast::<T>().add(index).as_ref() },
         }
     }
 
     pub fn get_mut<T: Component>(&mut self, index: usize) -> Option<&mut T> {
-        if index > self.len {
+        if index > self.len.saturating_sub(1) {
             None
         } else {
             unsafe { self.ptr.as_ptr().cast::<T>().add(index).as_mut() }
         }
     }
 
+    pub fn pop(&mut self) -> bool {
+        if self.len == 0 {
+            false
+        } else {
+            self.len -= 1;
+            unsafe {
+                ptr::drop_in_place(
+                    self.ptr
+                        .as_ptr()
+                        .add(self.len + self.type_info.layout.size()),
+                );
+                true
+            }
+        }
+    }
+
     /// Warning: last entity replaces removed entity. Any entity tracking vector needs to be
-    /// modified by caller to reflect change
-    pub fn remove(&mut self, entity_index: usize) {
+    /// modified by caller to reflect change. Order of column is not preserved
+    pub fn remove_component(&mut self, entity_index: usize) -> Box<dyn Component> {
         let size = self.type_info.layout.size();
+        let component: Box<dyn Component>;
         if self.len - 1 == entity_index {
             unsafe {
-                ptr::drop_in_place(self.ptr.as_ptr().add(self.len * size));
+                component =
+                    (self.type_info.to_component)(self.ptr.as_ptr().add(entity_index * size));
             }
-            self.len -= 1;
         } else {
             unsafe {
                 let to_remove = self.ptr.as_ptr().add(entity_index * size);
-                let top = self.ptr.as_ptr().add((self.len - 1) * size).read();
-                ptr::replace(to_remove, top);
-                self.len -= 1;
+                let top = self.ptr.as_ptr().add((self.len - 1) * size);
+                component = (self.type_info.replace)(to_remove, top);
+            }
+        };
+        self.len -= 1;
+        component
+    }
+}
+
+impl Drop for Column {
+    fn drop(&mut self) {
+        if self.cap != 0 {
+            while self.pop() {}
+            unsafe {
+                alloc::dealloc(self.ptr.as_ptr() as *mut u8, self.type_info.layout);
             }
         }
     }
@@ -173,12 +200,45 @@ mod tests {
     #[test]
     fn removal_at_index_ensures_compact_data() {
         let mut column = Column::new(TypeInfo::of::<i32>());
+        let mut column2 = Column::new(TypeInfo::of::<i32>());
+        column.push(1000);
+        column.push(2000);
+        column.push(3000);
+        column.push(4000);
+        column.remove_component(1);
+
+        assert_eq!(*column.get::<i32>(0).unwrap(), 1000);
+        assert_eq!(*column.get::<i32>(1).unwrap(), 4000);
+    }
+
+    #[test]
+    fn removal_returns_removed_data() {
+        let mut column = Column::new(TypeInfo::of::<i32>());
+        let mut column2 = Column::new(TypeInfo::of::<i32>());
+        column.push(1000);
+        column.push(2000);
+        column.push(3000);
+        column.push(4000);
+        let component = column.remove_component(1);
+        column.push_component(component);
+
+        assert_eq!(*column.get::<i32>(3).unwrap(), 2000);
+    }
+
+    #[test]
+    fn removes_at_end() {
+        let mut column = Column::new(TypeInfo::of::<i32>());
         column.push(1);
         column.push(2);
         column.push(3);
-        column.remove(1);
+        column.remove_component(2);
 
-        assert_eq!(*column.get::<i32>(0).unwrap(), 1);
-        assert_eq!(*column.get::<i32>(1).unwrap(), 3);
+        assert_eq!(*column.get::<i32>(1).unwrap(), 2);
+        assert_eq!(column.get::<i32>(2), None);
+        column
+            .get_slice::<i32>()
+            .iter()
+            .enumerate()
+            .for_each(|(i, elem)| assert_eq!(i as i32 + 1, *elem))
     }
 }

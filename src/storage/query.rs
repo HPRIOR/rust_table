@@ -150,10 +150,10 @@ mod tests {
         let mut world = World::new();
         let amount = 1000000;
         (0..amount).for_each(|_| {
-            world.spawn(entity!(8_u8, 20_i32));
+            world.spawn(entity!(8_u8, 20_i32), None);
         });
         (0..amount).for_each(|_| {
-            world.spawn(entity!(9_u8, 10_i32));
+            world.spawn(entity!(9_u8, 10_i32), None);
         });
         println!("{} entities created", amount * 2);
         let query = QueryInit::<(&u8, &mut i32)>::new(&mut world).execute();

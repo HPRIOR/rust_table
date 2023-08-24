@@ -3,6 +3,7 @@ use bit_set::BitSet;
 use super::{
     column::Column,
     component::{Component, Type, TypeInfo},
+    query::TQueryItem,
 };
 use crate::world::{EntityId, EntityIdGen};
 use std::any::TypeId;
@@ -17,7 +18,7 @@ pub struct EntityTable {
     // add unique ID
     pub id: BitSet,
     pub columns: Vec<Column>,
-    column_info: Vec<TypeInfo>,
+    pub column_info: Vec<TypeInfo>,
 }
 
 impl EntityTable {
@@ -35,7 +36,7 @@ impl EntityTable {
         self.column_info.iter().position(|ti| ti.id == t_id)
     }
 
-    pub fn add(&mut self, components: Vec<Box<dyn Component>>, entity: EntityId) {
+    pub fn add_entity(&mut self, components: Vec<Box<dyn Component>>, entity: EntityId) {
         self.entities.push(entity);
         components.into_iter().for_each(move |component| {
             let type_info = (*component).type_info();
@@ -44,24 +45,27 @@ impl EntityTable {
         });
     }
 
-    pub fn remove(&mut self, input_entity: EntityId) -> EntityId {
+    pub fn remove_entity(&mut self, input_entity: EntityId) -> Vec<Box<dyn Component>> {
         let entity_index = self
             .entities
             .iter()
             .position(|entity| *entity == input_entity);
-
+        let mut components: Vec<Box<dyn Component>>;
         if let Some(entity_index) = entity_index {
-            self.columns
+            components = self
+                .columns
                 .iter_mut()
-                .for_each(|column| column.remove(entity_index));
+                .map(|column| column.remove_component(entity_index))
+                .collect();
 
-            // Ensure entity index reflects new entity representation in column.
+            // Ensures entity index reflects new entity representation in column.
             // Removed entity replaced with top entity to ensure compact array
             self.entities.swap_remove(entity_index);
             input_entity
         } else {
             panic!("Could not find entity in table!")
-        }
+        };
+        components
     }
 
     /// Caller must check whether column is available in table first - panics
@@ -80,4 +84,48 @@ impl EntityTable {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use crate::entity;
+
+    use super::*;
+    #[test]
+    fn entity_can_be_added_to_table() {
+        let mut table = EntityTable::new(
+            vec![TypeInfo::of::<i32>(), TypeInfo::of::<u8>()],
+            BitSet::new(),
+        );
+
+        table.add_entity(entity!(1_i32, 2_u8), EntityId::Value(0));
+
+        let column1: Vec<&i32> = table.get::<i32>().collect();
+        let column2: Vec<&u8> = table.get::<u8>().collect();
+
+        assert_eq!(*column1[0], 1);
+        assert_eq!(*column2[0], 2);
+    }
+
+    #[test]
+    fn removing_an_entity_rearranges_table() {
+        let mut table = EntityTable::new(
+            vec![TypeInfo::of::<i32>(), TypeInfo::of::<u8>()],
+            BitSet::new(),
+        );
+
+        table.add_entity(entity!(1_i32, 1_u8), EntityId::Value(0));
+        table.add_entity(entity!(2_i32, 2_u8), EntityId::Value(1));
+        table.add_entity(entity!(3_i32, 3_u8), EntityId::Value(2));
+        table.add_entity(entity!(4_i32, 4_u8), EntityId::Value(3));
+
+        let entity = table.remove_entity(EntityId::Value(1));
+
+        let column1: Vec<&i32> = table.get::<i32>().collect();
+        let column2: Vec<&u8> = table.get::<u8>().collect();
+
+        assert_eq!(vec![&1, &4, &3], column1);
+        assert_eq!(vec![&1, &4, &3], column2);
+        assert_eq!(
+            vec![EntityId::Value(0), EntityId::Value(3), EntityId::Value(2)],
+            table.entities
+        )
+    }
+}
