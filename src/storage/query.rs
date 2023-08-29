@@ -104,7 +104,7 @@ impl<'world, Q: TQueryItem + TTableKey> QueryInit<'world, Q> {
         }
     }
 
-    pub fn execute(mut self) -> Box<dyn Iterator<Item = Q::Item> + 'world> {
+    pub fn execute(mut self) -> impl Iterator<Item = Q::Item> + 'world {
         let table_sigs = &self.world.table_ids_with_signature;
         let type_id_index = &self.world.type_id_index;
         let component_keys: BitSet = Q::get_key(type_id_index);
@@ -121,7 +121,7 @@ impl<'world, Q: TQueryItem + TTableKey> QueryInit<'world, Q> {
             })
             .flatten();
 
-        Box::new(table_columns)
+        table_columns
     }
 }
 
